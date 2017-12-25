@@ -5,33 +5,47 @@ module Step
         , noop
         , withAction
         , withActions
-        , inState
-        , withMsg
+        , map
+        , mapMsg
         , orElse
-        , resolve
+        , runStep
+        , finish
+        , feed
         )
 
+{-| Some stuff
 
-type Step state msg
-    = To state (Cmd msg)
-    | NoOp
-
-
-to : state -> Step state msg
-to s =
-    To s Cmd.none
-
-
-
-{-
-   Step.to DoingMultipleThings
-       |> Step.with (updateFirstThing thing1Msg thing1 )
-       |> Step.with (updateSecondThing thing2Msg thing2)
+@docs Step, map, noop, orElse, runStep, to, withAction, withActions, mapMsg, finish, feed
 
 -}
 
 
-with : Step subState msg -> Step (subState -> state) msg -> Step state msg
+{-| Step
+-}
+type Step state msg output
+    = To state (Cmd msg)
+    | Done output
+    | NoOp
+
+
+{-| step to a state with no actions
+-}
+to : state -> Step state msg output
+to state =
+    To state Cmd.none
+
+
+{-| Step multiple machines embedded in a parent state
+
+type Model
+= DoingMultipleThings ThingOne.Model ThingTwo.Model
+
+Step.to DoingMultipleThings
+|> Step.with (updateFirstThing thing1Msg thing1 )
+|> Step.with (updateSecondThing thing2Msg thing2)
+
+-}
+with : Step subState msg output -> Step (subState -> state) msg output -> Step state msg output
 with step stepF =
     case ( step, stepF ) of
         ( To subState actions, To f actions2 ) ->
@@ -41,69 +55,129 @@ with step stepF =
             NoOp
 
 
-noop : Step state msg
+{-| -}
+noop : Step state msg output
 noop =
     NoOp
 
 
-withAction : Cmd msg -> Step state msg -> Step state msg
+{-| -}
+withAction : Cmd msg -> Step state msg output -> Step state msg output
 withAction action step =
     case step of
         To state actions ->
             To state (Cmd.batch [ action, actions ])
 
+        Done output ->
+            Done output
+
         NoOp ->
             NoOp
 
 
-withActions : List (Cmd msg) -> Step state msg -> Step state msg
+{-| -}
+withActions : List (Cmd msg) -> Step state msg output -> Step state msg output
 withActions actions step =
     case step of
         To state oldActions ->
             To state (Cmd.batch (oldActions :: actions))
 
+        Done output ->
+            Done output
+
         NoOp ->
             NoOp
 
 
-inState : (subState -> state) -> Step subState msg -> Step state msg
-inState f step =
+{-| -}
+map : (subState -> state) -> Step subState msg output -> Step state msg output
+map f step =
     case step of
-        To s cmd ->
-            To (f s) cmd
+        To state cmd ->
+            To (f state) cmd
+
+        Done output ->
+            Done output
 
         NoOp ->
             NoOp
 
 
-withMsg : (subMsg -> msg) -> Step state subMsg -> Step state msg
-withMsg f step =
+{-| -}
+mapMsg : (subMsg -> msg) -> Step state subMsg output -> Step state msg output
+mapMsg f step =
     case step of
         To state msgCmd ->
             To state (Cmd.map f msgCmd)
 
+        Done output ->
+            Done output
+
         NoOp ->
             NoOp
 
 
-orElse : Step state msg -> Step state msg -> Step state msg
+{-| -}
+finish : output -> Step state msg output
+finish =
+    Done
+
+
+{-| -}
+orElse : Step state msg output -> Step state msg output -> Step state msg output
 orElse stepA stepB =
     case ( stepA, stepB ) of
-        ( To s1 actions1, To s2 actions2 ) ->
-            To s2 actions2
+        ( To _ _, To state actions ) ->
+            To state actions
 
-        ( To s a, NoOp ) ->
-            To s a
+        ( To state actions, NoOp ) ->
+            To state actions
 
-        ( NoOp, x ) ->
-            x
+        ( To state actions, Done output ) ->
+            Done output
+
+        ( NoOp, To state actions ) ->
+            To state actions
+
+        ( NoOp, NoOp ) ->
+            NoOp
+
+        ( NoOp, Done output ) ->
+            Done output
+
+        ( Done output, To state actions ) ->
+            Done output
+
+        ( Done output, NoOp ) ->
+            Done output
+
+        ( Done _, Done output ) ->
+            Done output
 
 
-resolve : Step state msg -> Maybe ( state, Cmd msg )
-resolve step =
+{-| -}
+feed : (output -> Step state msg output2) -> Step state msg output -> Step state msg output2
+feed f step =
+    case step of
+        To state msgCmd ->
+            To state msgCmd
+
+        Done output ->
+            f output
+
+        NoOp ->
+            NoOp
+
+
+{-| -}
+runStep : Step state msg Never -> Maybe ( state, Cmd msg )
+runStep step =
     case step of
         To state msgCmd ->
             Just ( state, msgCmd )
+
+        Done n ->
+            never n
 
         NoOp ->
             Nothing
