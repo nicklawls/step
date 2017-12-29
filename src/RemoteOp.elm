@@ -1,79 +1,128 @@
-module RemoteOp exposing (..)
+module RemoteOp exposing (Model, State(..))
 
+import Html exposing (Html, form)
 import Step exposing (Step)
 import Task exposing (Task)
 
 
-type RemoteOp prompt
+type Model prompt
+    = Model (State prompt)
+
+
+type State prompt
     = Prompting prompt
     | Loading
 
 
-init : prompt -> RemoteOp prompt
+init : prompt -> Model prompt
 init =
-    Prompting
+    Model << Prompting
 
 
-type Msg error response
-    = Answer (Result error response)
-    | Confirm
+type Msg promptingMsg error response
+    = OpResult (Result error response)
+    | PromptingMsg promptingMsg
     | Cancel
 
 
-type alias Config prompt err res =
-    { makeRequest : prompt -> Task err res }
+
+{- Adds cancelation and loading to a state machine that models a form and exits with the task that submits the form -}
 
 
 update :
-    Msg err res
-    -> RemoteOp prompt
-    -> Config prompt err res
-    -> Step (RemoteOp prompt) (Msg err res) (Maybe (Result err res))
-update msg remoteOp config =
-    case ( msg, remoteOp ) of
-        ( Confirm, Prompting prompt ) ->
-            Step.to Loading
-                |> Step.withAction
-                    (config.makeRequest prompt
-                        |> Task.attempt Answer
-                    )
+    (formMsg -> formState -> Step formState formMsg (Task err res))
+    -> Msg formMsg err res
+    -> Model formState
+    -> Step (Model formState) (Msg formMsg err res) (Maybe (Result err res))
+update stepForm msg (Model state) =
+    Step.map Model <|
+        case ( msg, state ) of
+            ( OpResult _, Prompting _ ) ->
+                Step.noop
 
-        ( Confirm, Loading ) ->
-            Step.noop
+            ( OpResult res, Loading ) ->
+                Step.exit (Just res)
 
-        ( Cancel, Prompting _ ) ->
-            Step.finish Nothing
+            ( PromptingMsg _, Loading ) ->
+                Step.noop
 
-        ( Cancel, Loading ) ->
-            Step.noop
+            ( Cancel, Loading ) ->
+                Step.noop
 
-        ( Answer res, Loading ) ->
-            Step.finish (Just res)
+            ( Cancel, Prompting _ ) ->
+                Step.exit Nothing
 
-        ( Answer res, Prompting _ ) ->
-            Step.noop
+            ( PromptingMsg pmsg, Prompting formState ) ->
+                stepForm pmsg formState
+                    |> Step.map Prompting
+                    |> Step.mapMsg PromptingMsg
+                    |> Step.onExit
+                        (\task ->
+                            Step.to Loading
+                                |> Step.withAction (Task.attempt OpResult task)
+                        )
 
 
-type Model
-    = DoingThing (RemoteOp ())
+view : Model form -> ((formMsg -> Msg formMsg e a) -> { cancel : Msg formMsg e a } -> State form -> Html msg) -> Html msg
+view (Model state) f =
+    f PromptingMsg { cancel = Cancel } state
+
+
+type Form
+    = Valid String
+    | Invalid String
+
+
+type FormMsg
+    = TypeString String
+    | Confirm
+
+
+type App
+    = GettingString (Model Form)
     | DoingOtherThing
     | Errored
     | GotIt Bool
 
 
 type Message
-    = Rom (Msg String Bool)
+    = GettingStringMsg (Msg FormMsg String Bool)
 
 
-example : Message -> Model -> Step Model Message Never
+stepForm : FormMsg -> Form -> Step Form FormMsg String
+stepForm formMsg form =
+    case ( formMsg, form ) of
+        ( TypeString s, _ ) ->
+            if List.member s [ "Set", "of", "valid", "strings" ] then
+                Step.to (Valid s)
+            else
+                Step.to (Invalid s)
+
+        ( Confirm, Valid s ) ->
+            Step.exit s
+
+        ( Confirm, Invalid _ ) ->
+            Step.noop
+
+
+fetchBool : String -> Task x Bool
+fetchBool =
+    Debug.crash ""
+
+
+(>>>) : (a -> b -> c) -> (c -> d) -> a -> b -> d
+(>>>) f g =
+    \a b -> g (f a b)
+
+
+example : Message -> App -> Step App Message Never
 example msg model =
     case ( msg, model ) of
-        ( Rom romsg, DoingThing remoteOp ) ->
-            { makeRequest = \() -> Task.succeed True }
-                |> update romsg remoteOp
-                |> Step.map DoingThing
-                |> Step.mapMsg Rom
-                |> Step.feed
+        ( GettingStringMsg dtm, GettingString remoteForm ) ->
+            update (stepForm >>> Step.mapExit fetchBool) dtm remoteForm
+                |> Step.map GettingString
+                |> Step.mapMsg GettingStringMsg
+                |> Step.onExit
                     (Maybe.map (Result.map GotIt >> Result.withDefault Errored)
                         >> Maybe.withDefault DoingOtherThing
                         >> Step.to

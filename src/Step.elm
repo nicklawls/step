@@ -4,27 +4,37 @@ module Step
         , to
         , noop
         , withAction
-        , withActions
         , map
         , mapMsg
         , orElse
-        , runStep
-        , finish
-        , feed
+        , run
+        , exit
+        , mapExit
+        , onExit
+        , andMap
         )
 
 {-| Some stuff
 
-@docs Step, map, noop, orElse, runStep, to, withAction, withActions, mapMsg, finish, feed
+@docs Step, map, noop, orElse, run, to, withAction, mapMsg, exit, mapExit, onExit, andMap
 
 -}
 
 
 {-| Step
+
+a `Step state msg output` describes one step of a state machine.
+
+On each step, the state machine can either
+
+  - do nothing, a `noop`
+  - step `to` some new `state`, potentially executing `Cmd msg`s along the way
+  - `exit`, and return a value of type `output`
+
 -}
 type Step state msg output
     = To state (Cmd msg)
-    | Done output
+    | Exit output
     | NoOp
 
 
@@ -37,21 +47,43 @@ to state =
 
 {-| Step multiple machines embedded in a parent state
 
-type Model
-= DoingMultipleThings ThingOne.Model ThingTwo.Model
+    type Model
+        = DoingMultipleThings ThingOne.Model ThingTwo.Model
 
-Step.to DoingMultipleThings
-|> Step.with (updateFirstThing thing1Msg thing1 )
-|> Step.with (updateSecondThing thing2Msg thing2)
+    nextState =
+        Step.to DoingMultipleThings
+            |> Step.andMap (updateFirstThing thing1Msg thing1)
+            |> Step.andMap (updateSecondThing thing2Msg thing2)
 
 -}
-with : Step subState msg output -> Step (subState -> state) msg output -> Step state msg output
-with step stepF =
+andMap : Step a msg output -> Step (a -> b) msg output -> Step b msg output
+andMap step stepF =
     case ( step, stepF ) of
-        ( To subState actions, To f actions2 ) ->
-            To (f subState) (Cmd.batch [ actions, actions2 ])
+        ( To state actions, To f moreActions ) ->
+            To (f state) (Cmd.batch [ actions, moreActions ])
 
-        _ ->
+        ( To _ _, Exit output ) ->
+            Exit output
+
+        ( To _ _, NoOp ) ->
+            NoOp
+
+        ( Exit output, To _ _ ) ->
+            Exit output
+
+        ( Exit _, Exit output ) ->
+            Exit output
+
+        ( Exit output, NoOp ) ->
+            Exit output
+
+        ( NoOp, To _ _ ) ->
+            NoOp
+
+        ( NoOp, Exit output ) ->
+            Exit output
+
+        ( NoOp, NoOp ) ->
             NoOp
 
 
@@ -68,59 +100,39 @@ withAction action step =
         To state actions ->
             To state (Cmd.batch [ action, actions ])
 
-        Done output ->
-            Done output
+        Exit output ->
+            Exit output
 
         NoOp ->
             NoOp
 
 
 {-| -}
-withActions : List (Cmd msg) -> Step state msg output -> Step state msg output
-withActions actions step =
-    case step of
-        To state oldActions ->
-            To state (Cmd.batch (oldActions :: actions))
-
-        Done output ->
-            Done output
-
-        NoOp ->
-            NoOp
-
-
-{-| -}
-map : (subState -> state) -> Step subState msg output -> Step state msg output
+map : (a -> b) -> Step a msg output -> Step b msg output
 map f step =
     case step of
         To state cmd ->
             To (f state) cmd
 
-        Done output ->
-            Done output
+        Exit output ->
+            Exit output
 
         NoOp ->
             NoOp
 
 
 {-| -}
-mapMsg : (subMsg -> msg) -> Step state subMsg output -> Step state msg output
+mapMsg : (a -> b) -> Step state a output -> Step state b output
 mapMsg f step =
     case step of
         To state msgCmd ->
             To state (Cmd.map f msgCmd)
 
-        Done output ->
-            Done output
+        Exit output ->
+            Exit output
 
         NoOp ->
             NoOp
-
-
-{-| -}
-finish : output -> Step state msg output
-finish =
-    Done
 
 
 {-| -}
@@ -133,8 +145,8 @@ orElse stepA stepB =
         ( To state actions, NoOp ) ->
             To state actions
 
-        ( To state actions, Done output ) ->
-            Done output
+        ( To state actions, Exit output ) ->
+            Exit output
 
         ( NoOp, To state actions ) ->
             To state actions
@@ -142,27 +154,47 @@ orElse stepA stepB =
         ( NoOp, NoOp ) ->
             NoOp
 
-        ( NoOp, Done output ) ->
-            Done output
+        ( NoOp, Exit output ) ->
+            Exit output
 
-        ( Done output, To state actions ) ->
-            Done output
+        ( Exit output, To state actions ) ->
+            Exit output
 
-        ( Done output, NoOp ) ->
-            Done output
+        ( Exit output, NoOp ) ->
+            Exit output
 
-        ( Done _, Done output ) ->
-            Done output
+        ( Exit _, Exit output ) ->
+            Exit output
 
 
 {-| -}
-feed : (output -> Step state msg output2) -> Step state msg output -> Step state msg output2
-feed f step =
+exit : output -> Step state msg output
+exit =
+    Exit
+
+
+{-| -}
+mapExit : (o -> p) -> Step state msg o -> Step state msg p
+mapExit f step =
+    case step of
+        To state actions ->
+            To state actions
+
+        Exit output ->
+            Exit (f output)
+
+        NoOp ->
+            NoOp
+
+
+{-| -}
+onExit : (o -> Step state msg p) -> Step state msg o -> Step state msg p
+onExit f step =
     case step of
         To state msgCmd ->
             To state msgCmd
 
-        Done output ->
+        Exit output ->
             f output
 
         NoOp ->
@@ -170,13 +202,13 @@ feed f step =
 
 
 {-| -}
-runStep : Step state msg Never -> Maybe ( state, Cmd msg )
-runStep step =
-    case step of
+run : Step state msg Never -> Maybe ( state, Cmd msg )
+run s =
+    case s of
         To state msgCmd ->
             Just ( state, msgCmd )
 
-        Done n ->
+        Exit n ->
             never n
 
         NoOp ->
