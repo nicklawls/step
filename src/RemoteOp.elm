@@ -14,9 +14,9 @@ type State prompt
     | Loading
 
 
-init : prompt -> Model prompt
-init =
-    Model << Prompting
+init : prompt -> Step (Model prompt) msg output
+init prompt =
+    Step.to (Model (Prompting prompt))
 
 
 type Msg promptingMsg error response
@@ -26,14 +26,16 @@ type Msg promptingMsg error response
 
 
 
-{- Adds cancelation and loading to a state machine that models a form and exits with the task that submits the form -}
+{- Adds cancelation and loading to a state machine that models a form and
+   exits with the task that submits the form
+-}
 
 
 update :
-    (formMsg -> formState -> Step formState formMsg (Task err res))
-    -> Msg formMsg err res
-    -> Model formState
-    -> Step (Model formState) (Msg formMsg err res) (Maybe (Result err res))
+    (msg -> state -> Step state msg (Task err res))
+    -> Msg msg err res
+    -> Model state
+    -> Step (Model state) (Msg msg err res) (Maybe (Result err res))
 update stepForm msg (Model state) =
     Step.map Model <|
         case ( msg, state ) of
@@ -87,6 +89,7 @@ type App
 
 type Message
     = GettingStringMsg (Msg FormMsg String Bool)
+    | StartForm
 
 
 stepForm : FormMsg -> Form -> Step Form FormMsg String
@@ -123,10 +126,21 @@ example msg model =
                 |> Step.map GettingString
                 |> Step.mapMsg GettingStringMsg
                 |> Step.onExit
-                    (Maybe.map (Result.map GotIt >> Result.withDefault Errored)
-                        >> Maybe.withDefault DoingOtherThing
-                        >> Step.to
+                    (\output ->
+                        Step.to <|
+                            case output of
+                                Just (Ok s) ->
+                                    GotIt s
+
+                                Just (Err _) ->
+                                    Errored
+
+                                Nothing ->
+                                    DoingOtherThing
                     )
+
+        ( StartForm, DoingOtherThing ) ->
+            Step.map GettingString (init (Invalid ""))
 
         ( _, _ ) ->
             Step.noop
