@@ -1,6 +1,6 @@
-module RemoteOp exposing (Model, State(..))
+module RemoteOp exposing (Model, Msg, State(..), init, update, view, map)
 
-import Html exposing (Html, form)
+import Html exposing (Html)
 import Step exposing (Step)
 import Task exposing (Task)
 
@@ -14,6 +14,17 @@ type State prompt
     | Loading
 
 
+map : (a -> b) -> Model a -> Model b
+map f (Model state) =
+    Model <|
+        case state of
+            Prompting a ->
+                Prompting (f a)
+
+            Loading ->
+                Loading
+
+
 init : prompt -> Step (Model prompt) msg output
 init prompt =
     Step.to (Model (Prompting prompt))
@@ -23,6 +34,7 @@ type Msg promptingMsg error response
     = OpResult (Result error response)
     | PromptingMsg promptingMsg
     | Cancel
+    | Confirm
 
 
 
@@ -31,13 +43,15 @@ type Msg promptingMsg error response
 -}
 
 
-update :
-    (msg -> state -> Step state msg (Task err res))
+updateWithContext :
+    { stepForm : msg -> state -> Step ( context, state ) msg Never
+    , onConfirm : state -> Step ( context, state ) msg ( context, Task err res )
+    }
     -> Msg msg err res
     -> Model state
-    -> Step (Model state) (Msg msg err res) (Maybe (Result err res))
-update stepForm msg (Model state) =
-    Step.map Model <|
+    -> Step ( context, Model state ) (Msg msg err res) (Maybe (Result err res))
+updateWithContext { stepForm, onConfirm } msg (Model state) =
+    Step.map (Tuple.mapSecond Model) <|
         case ( msg, state ) of
             ( OpResult _, Prompting _ ) ->
                 Step.noop
@@ -54,93 +68,59 @@ update stepForm msg (Model state) =
             ( Cancel, Prompting _ ) ->
                 Step.exit Nothing
 
-            ( PromptingMsg pmsg, Prompting formState ) ->
-                stepForm pmsg formState
-                    |> Step.map Prompting
+            ( Confirm, Prompting formState ) ->
+                onConfirm formState
+                    |> Step.map (Tuple.mapSecond Prompting)
                     |> Step.mapMsg PromptingMsg
                     |> Step.onExit
-                        (\task ->
-                            Step.to Loading
-                                |> Step.withAction (Task.attempt OpResult task)
+                        (\( context, task ) ->
+                            Step.to ( context, Loading )
+                                |> Step.withCmd (Task.attempt OpResult task)
                         )
 
+            ( Confirm, Loading ) ->
+                Step.noop
 
-view : Model form -> ((formMsg -> Msg formMsg e a) -> { cancel : Msg formMsg e a } -> State form -> Html msg) -> Html msg
+            ( PromptingMsg pmsg, Prompting formState ) ->
+                stepForm pmsg formState
+                    |> Step.map (Tuple.mapSecond Prompting)
+                    |> Step.mapMsg PromptingMsg
+                    |> Step.mapExit never
+
+
+update :
+    { stepForm : msg -> state -> Step state msg Never
+    , onConfirm : state -> Step state msg (Task err res)
+    }
+    -> Msg msg err res
+    -> Model state
+    -> Step (Model state) (Msg msg err res) (Maybe (Result err res))
+update { stepForm, onConfirm } msg model =
+    Step.map Tuple.second <|
+        updateWithContext
+            { stepForm = \msg state -> Step.map withUnit (stepForm msg state)
+            , onConfirm = onConfirm >> Step.mapExit withUnit >> Step.map withUnit
+            }
+            msg
+            model
+
+
+withUnit : a -> ( (), a )
+withUnit a =
+    ( (), a )
+
+
+view :
+    Model form
+    ->
+        ((formMsg -> Msg formMsg e a)
+         ->
+            { cancel : Msg formMsg e a
+            , confirm : Msg formMsg e a
+            }
+         -> State form
+         -> Html msg
+        )
+    -> Html msg
 view (Model state) f =
-    f PromptingMsg { cancel = Cancel } state
-
-
-type Form
-    = Valid String
-    | Invalid String
-
-
-type FormMsg
-    = TypeString String
-    | Confirm
-
-
-type App
-    = GettingString (Model Form)
-    | DoingOtherThing
-    | Errored
-    | GotIt Bool
-
-
-type Message
-    = GettingStringMsg (Msg FormMsg String Bool)
-    | StartForm
-
-
-stepForm : FormMsg -> Form -> Step Form FormMsg String
-stepForm formMsg form =
-    case ( formMsg, form ) of
-        ( TypeString s, _ ) ->
-            if List.member s [ "Set", "of", "valid", "strings" ] then
-                Step.to (Valid s)
-            else
-                Step.to (Invalid s)
-
-        ( Confirm, Valid s ) ->
-            Step.exit s
-
-        ( Confirm, Invalid _ ) ->
-            Step.noop
-
-
-fetchBool : String -> Task x Bool
-fetchBool =
-    Debug.crash ""
-
-
-(>>>) : (a -> b -> c) -> (c -> d) -> a -> b -> d
-(>>>) f g =
-    \a b -> g (f a b)
-
-
-example : Message -> App -> Step App Message Never
-example msg model =
-    case ( msg, model ) of
-        ( GettingStringMsg dtm, GettingString remoteForm ) ->
-            update (stepForm >>> Step.mapExit fetchBool) dtm remoteForm
-                |> Step.map GettingString
-                |> Step.mapMsg GettingStringMsg
-                |> Step.onExit
-                    (\output ->
-                        Step.to <|
-                            case output of
-                                Just (Ok s) ->
-                                    GotIt s
-
-                                Just (Err _) ->
-                                    Errored
-
-                                Nothing ->
-                                    DoingOtherThing
-                    )
-
-        ( StartForm, DoingOtherThing ) ->
-            Step.map GettingString (init (Invalid ""))
-
-        ( _, _ ) ->
-            Step.noop
+    f PromptingMsg { cancel = Cancel, confirm = Confirm } state
