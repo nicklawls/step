@@ -1,5 +1,5 @@
 # step
-Clean elm update functions, with the help of state machines
+Clean update functions, with the help of state machines
 
 
 ```
