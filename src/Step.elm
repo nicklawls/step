@@ -12,11 +12,12 @@ module Step
         , mapExit
         , onExit
         , asUpdateFunction
+        , foldSteps
         )
 
 {-| Some stuff
 
-@docs Step, map, noop, orElse, run, to, withCmd, mapMsg, exit, mapExit, onExit, asUpdateFunction
+@docs Step, map, noop, orElse, run, to, withCmd, mapMsg, exit, mapExit, onExit, asUpdateFunction, foldSteps
 
 -}
 
@@ -184,3 +185,28 @@ run s =
 
         NoOp ->
             Nothing
+
+
+{-| starting from an initial state, fold an update function over a list of messages
+-}
+foldSteps :
+    { init : Step model msg output
+    , update : msg -> model -> Step model msg output
+    , msgs : List msg
+    }
+    -> Step model msg output
+foldSteps { update, init, msgs } =
+    List.foldl (andThen << update) init msgs
+
+
+andThen : (model1 -> Step model2 msg output) -> Step model1 msg output -> Step model2 msg output
+andThen f s =
+    case s of
+        To state commands ->
+            f state |> withCmd (Cmd.batch commands)
+
+        NoOp ->
+            NoOp
+
+        Exit output ->
+            Exit output
