@@ -21,6 +21,8 @@ module Step
 
 -}
 
+import Task
+
 
 {-| Step
 
@@ -187,15 +189,81 @@ run s =
             Nothing
 
 
+filter : (a -> Bool) -> Step a msg o -> Step a msg o
+filter pred step =
+    case step of
+        To state cmds ->
+            if pred state then
+                To state cmds
+            else
+                NoOp
+
+        NoOp ->
+            NoOp
+
+        Exit output ->
+            Exit output
+
+
+filterMap : (a -> Maybe b) -> Step a msg o -> Step b msg o
+filterMap f step =
+    case step of
+        To state cmds ->
+            case f state of
+                Just newState ->
+                    To newState cmds
+
+                Nothing ->
+                    NoOp
+
+        NoOp ->
+            NoOp
+
+        Exit o ->
+            Exit o
+
+
+fromMaybe : Maybe a -> Step a msg o
+fromMaybe x =
+    case x of
+        Just s ->
+            To s []
+
+        Nothing ->
+            NoOp
+
+
+fromUpdate : ( state, Cmd msg ) -> Step state msg output
+fromUpdate ( s, cmd ) =
+    To s [ cmd ]
+
+
+
+-- foo
+--     |> Step.withAttempt someFunc task
+
+
+withAttempt : (Result x a -> msg) -> Task.Task x a -> Step state msg output -> Step state msg output
+withAttempt handler task step =
+    case step of
+        To state cmds ->
+            To state (Task.attempt handler task :: cmds)
+
+        NoOp ->
+            NoOp
+
+        Exit o ->
+            Exit o
+
+
 {-| starting from an initial state, fold an update function over a list of messages
 -}
 foldSteps :
-    { init : Step model msg output
-    , update : msg -> model -> Step model msg output
-    , msgs : List msg
-    }
+    (msg -> model -> Step model msg output)
     -> Step model msg output
-foldSteps { update, init, msgs } =
+    -> List msg
+    -> Step model msg output
+foldSteps update init msgs =
     List.foldl (andThen << update) init msgs
 
 

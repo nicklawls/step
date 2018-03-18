@@ -1,5 +1,5 @@
 # step
-Clean update functions, with the help of state machines
+Step a process forward, or not, or finish it
 
 
 ```
