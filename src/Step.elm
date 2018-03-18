@@ -189,22 +189,6 @@ run s =
             Nothing
 
 
-filter : (a -> Bool) -> Step a msg o -> Step a msg o
-filter pred step =
-    case step of
-        To state cmds ->
-            if pred state then
-                To state cmds
-            else
-                NoOp
-
-        NoOp ->
-            NoOp
-
-        Exit output ->
-            Exit output
-
-
 filterMap : (a -> Maybe b) -> Step a msg o -> Step b msg o
 filterMap f step =
     case step of
