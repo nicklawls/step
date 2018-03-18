@@ -13,11 +13,15 @@ module Step
         , onExit
         , asUpdateFunction
         , foldSteps
+        , filterMap
+        , fromMaybe
+        , fromUpdate
+        , withAttempt
         )
 
 {-| Some stuff
 
-@docs Step, map, noop, orElse, run, to, withCmd, mapMsg, exit, mapExit, onExit, asUpdateFunction, foldSteps
+@docs Step, map, noop, orElse, run, to, withCmd, mapMsg, exit, mapExit, onExit, asUpdateFunction, foldSteps, filterMap, fromMaybe, fromUpdate, withAttempt
 
 -}
 
@@ -189,6 +193,8 @@ run s =
             Nothing
 
 
+{-| useful for digging into some part of a model, and bailing out with a noop if you can't
+-}
 filterMap : (a -> Maybe b) -> Step a msg o -> Step b msg o
 filterMap f step =
     case step of
@@ -207,6 +213,8 @@ filterMap f step =
             Exit o
 
 
+{-| Interpret a `Maybe a` as either a step to state `a`, or a noop
+-}
 fromMaybe : Maybe a -> Step a msg o
 fromMaybe x =
     case x of
@@ -217,16 +225,23 @@ fromMaybe x =
             NoOp
 
 
+{-| `fromUpdate (myState, myCmd) == Step.to mayState |> Step.withCmd myCmd`
+-}
 fromUpdate : ( state, Cmd msg ) -> Step state msg output
 fromUpdate ( s, cmd ) =
     To s [ cmd ]
 
 
 
--- foo
---     |> Step.withAttempt someFunc task
+--
 
 
+{-| Helper for tasks
+
+    Step.to myState
+        |> Step.withAttempt someFunc myTask
+
+-}
 withAttempt : (Result x a -> msg) -> Task.Task x a -> Step state msg output -> Step state msg output
 withAttempt handler task step =
     case step of
