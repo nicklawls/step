@@ -1,9 +1,7 @@
 module Step exposing (Step, map, stay, orElse, run, to, withCmd, mapMsg, exit, mapExit, onExit, asUpdateFunction, foldSteps, withAttempt, fromUpdate, fromMaybe)
 
-{-| Some stuff
-
+{-|
 @docs Step, map, stay, orElse, run, to, withCmd, mapMsg, exit, mapExit, onExit, asUpdateFunction, foldSteps, withAttempt, fromUpdate, fromMaybe
-
 -}
 
 import Task
