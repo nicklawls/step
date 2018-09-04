@@ -1,19 +1,4 @@
-module Step
-    exposing
-        ( Step
-        , to
-        , noop
-        , withCmd
-        , map
-        , mapMsg
-        , orElse
-        , run
-        , exit
-        , mapExit
-        , onExit
-        , asUpdateFunction
-        , foldSteps
-        )
+module Step exposing (Step, map, noop, orElse, run, to, withCmd, mapMsg, exit, mapExit, onExit, asUpdateFunction, foldSteps)
 
 {-| Some stuff
 

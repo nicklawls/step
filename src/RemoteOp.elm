@@ -1,4 +1,4 @@
-module RemoteOp exposing (Model, Msg, State(..), init, update, view, map)
+module RemoteOp exposing (Model, Msg, State(..), init, map, update, view)
 
 import Html exposing (Html)
 import Step exposing (Step)
