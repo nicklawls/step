@@ -2,7 +2,7 @@
     "type": "package",
     "name": "xilnocas/step",
     "summary": "Clean update functions, with the help of state machines",
-    "license": "MIT-No-Attribution",
+    "license": "MIT-O",
     "version": "3.0.0",
     "exposed-modules": [
         "Step"
