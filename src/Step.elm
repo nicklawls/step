@@ -23,7 +23,7 @@ A `Step s msg o` describes one step of an interaction. Here's a few things about
 
 -}
 type Step s msg o
-    = To state (List (Cmd msg))
+    = To s (List (Cmd msg))
     | Exit o
     | Stay
 
@@ -151,7 +151,7 @@ orElse stepA stepB =
 
 {-| Map over the output of an interaction, if we've reached the end
 -}
-mapExit : (o -> p) -> Step s msg o -> Step state msg p
+mapExit : (o -> p) -> Step s msg o -> Step s msg p
 mapExit f step =
     case step of
         To state commands ->
@@ -240,7 +240,7 @@ fromMaybe x =
             Stay
 
 
-fromUpdate : ( state, Cmd msg ) -> Step s msg o
+fromUpdate : ( s, Cmd msg ) -> Step s msg o
 fromUpdate ( s, cmd ) =
     To s [ cmd ]
 
