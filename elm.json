@@ -3,7 +3,7 @@
     "name": "xilnocas/step",
     "summary": "An experimental library for update functions",
     "license": "MIT",
-    "version": "3.0.0",
+    "version": "3.0.1",
     "exposed-modules": [
         "Step"
     ],
