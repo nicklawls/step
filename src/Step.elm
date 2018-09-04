@@ -1,8 +1,8 @@
-module Step exposing (Step, map, stay, orElse, run, to, withCmd, mapMsg, exit, mapExit, onExit, asUpdateFunction, foldSteps)
+module Step exposing (Step, map, stay, orElse, run, to, withCmd, mapMsg, exit, mapExit, onExit, asUpdateFunction, foldSteps, withAttempt, fromUpdate, fromMaybe)
 
 {-| Some stuff
 
-@docs Step, map, stay, orElse, run, to, withCmd, mapMsg, exit, mapExit, onExit, asUpdateFunction, foldSteps
+@docs Step, map, stay, orElse, run, to, withCmd, mapMsg, exit, mapExit, onExit, asUpdateFunction, foldSteps, withAttempt, fromUpdate, fromMaybe
 
 -}
 
@@ -230,6 +230,8 @@ filterMap f step =
             Exit o
 
 
+{-| Step to the state denoted by the `a` in the `Just` case, and stay otherwise
+-}
 fromMaybe : Maybe a -> Step a msg o
 fromMaybe x =
     case x of
@@ -240,16 +242,15 @@ fromMaybe x =
             Stay
 
 
+{-| Build a step from a normal elm update tuple
+-}
 fromUpdate : ( s, Cmd msg ) -> Step s msg o
 fromUpdate ( s, cmd ) =
     To s [ cmd ]
 
 
-
--- foo
---     |> Step.withAttempt someFunc task
-
-
+{-| A helper for building steps out of tasks
+-}
 withAttempt : (Result x a -> msg) -> Task.Task x a -> Step s msg o -> Step s msg o
 withAttempt handler task step =
     case step of
