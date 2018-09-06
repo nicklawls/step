@@ -1,13 +1,13 @@
 # elm-state-transition
 An experimental library for cleaner, more composable update functions
 
-## Install
+## Installation
 
 ```
 elm package install xilnocas/elm-state-transition
 ```
 
----
+## Usage
 
 This library deals with _state transitions_, a fancy term for the act of updating the state of your application. Any time your app steps from one state to another, It's undergone a state transition. In an elm app, state transitions happen in response to messages. The update function is what tells Elm how to transition the state of your app when a given message fires. So, at the code level, this lbrary deals with writing update functions.
 
@@ -16,11 +16,17 @@ The idea is that instead of returning a `(Model, Cmd Msg)` from your update func
 
 At least as importantly, I believe the library expresses these patterns in a way that's less about the visual "components" in your app, and more about the underlying _interactions_, and helping them have as little state as possible. That way, you can leave all the visual detail for your `view` function, where it belongs! Here are a few quick examples of what I'm talking about:
 
-* `Step.map` works just like `map` from `Maybe` and `Result`. It lets step a returned from one update function become part of an update function that calls it. If you have update functions with a lot of `let` expressions, you're going to like this function. `Step.mapMsg` works the same way, but for the second type variable.
+### Step.map
 
-* `Step.stay` is sort of like `Nothing`, but specialized for `Steps`. It lets you say "on this combination of `Model` and `Msg`, I don't want the state to transition. When used in combination with `Step.orElse`, it lets you combine a bunch of isolated steps, and return only the first one that isn't a `stay`
+`Step.map` works just like `map` from `Maybe` and `Result`. It lets a `Step` returned from one update function become part of an update function that calls it. If you have update functions with a lot of `let` expressions, you're going to like this function. `Step.mapMsg` works the same way, but for the second type variable.
 
-* `Step.exit` and `Step.onExit` work together to implement a version of what's sometimes called the "OutMsg" pattern, which is really just returning context other than the `(Model, Cmd Msg)` from an update function. A special case of that pattern that I've found really useful is when *the context only comes out when update function makes its final transition*. Think of a login interaction: It starts, proceeds as the user gets types their info, then some REST call is made, then when all is said and done we're left with a `User`. We can encode that idea really easily:
+### Step.stay
+
+`Step.stay` is sort of like `Nothing`, but specialized for `Steps`. It lets you say "on this combination of `Model` and `Msg`, I don't want the state to transition. When used in combination with `Step.orElse`, it lets you combine a bunch of isolated steps, and return only the first one that isn't a `stay`
+
+### Step.exit
+
+`Step.exit` and `Step.onExit` work together to implement a version of what's sometimes called the "OutMsg" pattern, which is really just returning context other than the `(Model, Cmd Msg)` from an update function. A special case of that pattern that I've found really useful is when *the context only comes out when update function makes its final transition*. Think of a login interaction: It starts, proceeds as the user gets types their info, then some REST call is made, then when all is said and done we're left with a `User`. We can encode that idea really easily:
 
 
 ```elm

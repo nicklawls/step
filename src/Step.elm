@@ -69,7 +69,7 @@ to state =
 
 {-| Keep the interaction in the state it was in.
 
-*NOTE*: This will prevent any commands from being returned
+**Note**: This will prevent any commands from being returned
 
     Step.stay == (Step.stay |> Step.withCmd myHttpCall)
 
