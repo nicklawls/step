@@ -14,7 +14,7 @@ This library deals with _state transitions_, a fancy term for the act of updatin
 The idea is that instead of returning a `(Model, Cmd Msg)` from your update function, you'll return a `Step Model Msg a`, with or without the `a` variable filled in. I know, I know, there are _three_ type variables there. I'd like there to be fewer, but they're just too darn useful! In return for having to look at three freakin type variables all day long, you'll get an API that should look familiar if you've been doing elm for a while, and lets you encode a bunch of common update function patterns very succinctly. 
 
 
-At least as importantly importantly, I believe this library expresses these patterns in a way that's less about the visual "components" in your app, and more about _interactions_ that have as little state as possible. That way, you can leave all the visual detail for your `view` function, where it belongs! Here are a few quick examples of what I'm talking about:
+At least as importantly, I believe the library expresses these patterns in a way that's less about the visual "components" in your app, and more about the underlying _interactions_, and helping them have as little state as possible. That way, you can leave all the visual detail for your `view` function, where it belongs! Here are a few quick examples of what I'm talking about:
 
 * `Step.map` works just like `map` from `Maybe` and `Result`. It lets step a returned from one update function become part of an update function that calls it. If you have update functions with a lot of `let` expressions, you're going to like this function. `Step.mapMsg` works the same way, but for the second type variable.
 

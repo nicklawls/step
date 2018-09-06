@@ -40,9 +40,7 @@ All of these functions help you build functions that return steps out of other f
 import Task
 
 
-{-| Step
-
-A `Step model msg a` describes one state transition of an application, and is inteneded to be what gets returned from an update function.
+{-| A `Step model msg a` describes one state transition of an application, and is inteneded to be what gets returned from an update function.
 
 It's helpful to look at how a `Step` is (roughly) represented under the hood
 
@@ -71,7 +69,7 @@ to state =
 
 {-| Keep the interaction in the state it was in.
 
-NOTE: This will prevent any commands from being returned
+*NOTE*: This will prevent any commands from being returned
 
     Step.stay == (Step.stay |> Step.withCmd myHttpCall)
 
@@ -94,7 +92,7 @@ exit =
 
 {-| If we're stepping `to` a new state, add an command to fire off
 
-This can be called on a step multiple times, and all the commands will fire.
+This can be called on a `Step` multiple times, and all the commands will fire.
 
 No commands are fired if the Step turns out to be a `stay` or an `exit`
 
@@ -112,9 +110,9 @@ withCmd command step =
             Stay
 
 
-{-| Apply a function to the state inside a step, if it's there
+{-| Apply a function to the state inside a `Step`, if it's there
 
-Most useful in building a bigger step out of a sub-step you happen to have lying around
+Most useful in building a `Step` out of another `Step` returned from some other update function you're calling
 
 -}
 map : (model1 -> model2) -> Step model1 msg a -> Step model2 msg a
@@ -130,7 +128,7 @@ map f step =
             Stay
 
 
-{-| Apply a function to any `msg`s conteined in the step
+{-| Apply a function to any `msg`s conteined in the `Step`
 
 Also used for building larger interaction steps out of smaller ones
 
@@ -148,7 +146,7 @@ mapMsg f step =
             Stay
 
 
-{-| Run the first suceeding step, with priority given to the second argument
+{-| Run the first suceeding `Step`, with priority given to the second argument
 
 Intended to be used pipeline style
 
@@ -203,7 +201,7 @@ mapExit f step =
             Stay
 
 
-{-| Choose a step based on the result of another interaction
+{-| Choose a `Step` based on the result of another interaction
 
 You can use this in combination with `map` and `mapMsg` to glue the end of one interaction to the beginning of another.
 
@@ -223,9 +221,9 @@ onExit f step =
             Stay
 
 
-{-| Turn a Step into the usual TEA update tuple
+{-| Turn a `Step` into the usual TEA update tuple
 
-It must be a step in an interaction that continues forever. We know it is if the type variable `o` isn't a specifc type, and can thus be chosen to be `Never`
+It must be a `Step` that doesn't `exit`. We know it is if the type variable `a` is still lowercase, i.e. not a specifc type, and can thus be chosen to be `Never` when calling this function.
 
 -}
 run : Step model msg Never -> Maybe ( model, Cmd msg )
@@ -283,14 +281,14 @@ fromMaybe x =
             Stay
 
 
-{-| Build a step from a normal elm update tuple
+{-| Build a `Step` from a normal elm update tuple
 -}
 fromUpdate : ( model, Cmd msg ) -> Step model msg o
 fromUpdate ( s, cmd ) =
     To s [ cmd ]
 
 
-{-| A helper for building steps out of tasks
+{-| A helper for building `Step`s out of tasks
 -}
 withAttempt : (Result x a -> msg) -> Task.Task x a -> Step model msg b -> Step model msg b
 withAttempt handler task step =
@@ -305,7 +303,7 @@ withAttempt handler task step =
             Exit o
 
 
-{-| starting from an initial state, fold an update function over a list of messages
+{-| Starting from an initial state, fold an update function over a list of messages
 -}
 foldSteps :
     (msg -> model -> Step model msg a)
