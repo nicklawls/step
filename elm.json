@@ -1,7 +1,7 @@
 {
     "type": "package",
     "name": "xilnocas/step",
-    "summary": "An experimental library for update functions",
+    "summary": "An experimental library for cleaner, more composable update functions",
     "license": "MIT",
     "version": "3.0.1",
     "exposed-modules": [
