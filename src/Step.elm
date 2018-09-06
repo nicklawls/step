@@ -205,7 +205,7 @@ mapExit f step =
 
 You can use this in combination with `map` and `mapMsg` to glue the end of one interaction to the beginning of another.
 
-Notice that it looks a lot like `Maybe.andThen` and `Maybe.result`, but operating on the last type variable.
+Notice that it looks a lot like `Maybe.andThen` and `Result.andThen`, but operating on the last type variable.
 
 -}
 onExit : (a -> Step model msg b) -> Step model msg a -> Step model msg b
