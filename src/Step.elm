@@ -1,17 +1,17 @@
 module Step exposing
-    ( Step, to, stay, exit
+    ( Step, to, stay, exit, fromUpdate, fromMaybe
     , withCmd, withAttempt
     , map, mapMsg, mapExit, orElse, onExit
     , run, asUpdateFunction
-    , fromUpdate, fromMaybe, foldSteps
+    , foldSteps
     )
 
-{-| elm-state-transition
+{-|
 
 
-# Steps, and how to make them
+# Steps and how to make them
 
-@docs Step, to, stay, exit
+@docs Step, to, stay, exit, fromUpdate, fromMaybe
 
 
 # Executing commands
@@ -31,9 +31,9 @@ All of these functions help you build functions that return steps out of other f
 @docs run, asUpdateFunction
 
 
-# Misc
+# Testing update functions
 
-@docs fromUpdate, fromMaybe, foldSteps
+@docs foldSteps
 
 -}
 
@@ -49,9 +49,9 @@ It's helpful to look at how a `Step` is (roughly) represented under the hood
         | Exit a
         | Stay
 
-We provide a constructor for each of these options, but we hide the internal representation to make sure you're combining steps in principled ways.
+We provide a smart constructor for each of these variants, but we hide the internal representation to make sure you're not pattern matching on `Step`s willy-nilly.
 
-That being said, if you find something that makes you want the data structure fully exposed, let me know what the use case is!
+That being said, if you find something that makes you want the data structure fully exposed, please make an issue on GitHub!
 
 -}
 type Step model msg a
@@ -112,7 +112,7 @@ withCmd command step =
 
 {-| Apply a function to the state inside a `Step`, if it's there
 
-Most useful in building a `Step` out of another `Step` returned from some other update function you're calling
+Most useful for building a `Step` out of another `Step` returned from some other update function you're calling
 
 -}
 map : (model1 -> model2) -> Step model1 msg a -> Step model2 msg a
@@ -128,9 +128,9 @@ map f step =
             Stay
 
 
-{-| Apply a function to any `msg`s conteined in the `Step`
+{-| Apply a function to any `msg`s in the `Step`'s commands
 
-Also used for building larger interaction steps out of smaller ones
+Often used alongside `map` for building "bigger" `Step`s out of "smaller" ones
 
 -}
 mapMsg : (msg1 -> msg2) -> Step model msg1 a -> Step model msg2 a
@@ -239,7 +239,7 @@ run s =
             Nothing
 
 
-{-| turn an update function that returns a `Step` to a normal Elm Architecture update function
+{-| Turn an update function that returns a `Step` to a normal Elm Architecture update function
 
 uses `run` internally to default with the provided model in case of a `stay`
 
@@ -269,7 +269,7 @@ filterMap f step =
             Exit o
 
 
-{-| Step to the state denoted by the `model` in the `Just` case, and stay otherwise
+{-| Step to the state denoted by the `model` in the `Just` case, stay otherwise
 -}
 fromMaybe : Maybe model -> Step model msg a
 fromMaybe x =
@@ -304,6 +304,9 @@ withAttempt handler task step =
 
 
 {-| Starting from an initial state, fold an update function over a list of messages
+
+Only use this to test that the application of cettain messages produces the result you expect, In application code, building up a bunch of `Msg`s just to feed them to an update function is ususally not worth the effort.
+
 -}
 foldSteps :
     (msg -> model -> Step model msg a)
@@ -325,3 +328,13 @@ andThen f s =
 
         Exit o ->
             Exit o
+
+
+oneOf : List (Step model msg a) -> Step model msg a
+oneOf steps =
+    case steps of
+        [] ->
+            Stay
+
+        head :: tail ->
+            List.foldl orElse head tail
