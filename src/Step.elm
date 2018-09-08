@@ -1,7 +1,7 @@
 module Step exposing
     ( Step, to, stay, exit, fromUpdate, fromMaybe
-    , withCmd, withAttempt
-    , map, mapMsg, mapExit, orElse, onExit
+    , withCmd, withAttempt, command, attempt
+    , map, mapMsg, within, mapExit, orElse, onExit
     , run, asUpdateFunction
     , foldSteps
     )
@@ -14,16 +14,16 @@ module Step exposing
 @docs Step, to, stay, exit, fromUpdate, fromMaybe
 
 
-# Executing commands
+# Issuing commands
 
-@docs withCmd, withAttempt
+@docs withCmd, withAttempt, command, attempt
 
 
-# Composing Steps
+# Transforming and Composing Steps
 
 All of these functions help you build functions that return steps out of other functions that return steps
 
-@docs map, mapMsg, mapExit, orElse, onExit
+@docs map, mapMsg, within, mapExit, orElse, onExit
 
 
 # Getting back to TEA land
@@ -90,18 +90,41 @@ exit =
     Exit
 
 
-{-| If we're stepping `to` a new state, add an command to fire off
+{-| If we're stepping `to` a new state, add an cmd to fire off
 
 This can be called on a `Step` multiple times, and all the commands will fire.
 
 No commands are fired if the Step turns out to be a `stay` or an `exit`
 
+Alternate name ideas:
+
+  - effectfully
+  - cmd
+  - command (provided below)
+  - yelling
+  - with
+
 -}
 withCmd : Cmd msg -> Step model msg a -> Step model msg a
-withCmd command step =
+withCmd cmd step =
     case step of
         To state commands ->
-            To state (command :: commands)
+            To state (cmd :: commands)
+
+        Exit o ->
+            Exit o
+
+        Stay ->
+            Stay
+
+
+{-| Experimental alias for withCmd
+-}
+command : Cmd msg -> Step model msg a -> Step model msg a
+command cmd step =
+    case step of
+        To state commands ->
+            To state (cmd :: commands)
 
         Exit o ->
             Exit o
@@ -273,6 +296,7 @@ filterMap f step =
 -}
 fromMaybe : Maybe model -> Step model msg a
 fromMaybe x =
+    -- TODO rename
     case x of
         Just s ->
             To s []
@@ -303,6 +327,21 @@ withAttempt handler task step =
             Exit o
 
 
+{-| Experimental alias for `withAttempt`
+-}
+attempt : (Result x a -> msg) -> Task.Task x a -> Step model msg b -> Step model msg b
+attempt handler task step =
+    case step of
+        To state cmds ->
+            To state (Task.attempt handler task :: cmds)
+
+        Stay ->
+            Stay
+
+        Exit o ->
+            Exit o
+
+
 {-| Starting from an initial state, fold an update function over a list of messages
 
 Only use this to test that the application of cettain messages produces the result you expect, In application code, building up a bunch of `Msg`s just to feed them to an update function is ususally not worth the effort.
@@ -314,6 +353,7 @@ foldSteps :
     -> List msg
     -> Step model msg a
 foldSteps update init msgs =
+    {- TODO rename -}
     List.foldl (andThen << update) (fromUpdate init) msgs
 
 
@@ -338,3 +378,57 @@ oneOf steps =
 
         head :: tail ->
             List.foldl orElse head tail
+
+
+{-| Use a step "within" a larger interaction
+
+    Step.within f g = Step.map f >> Step.mapMsg g
+
+-}
+within : (model1 -> model2) -> (msg1 -> msg2) -> Step model1 msg1 a -> Step model2 msg2 a
+within f g =
+    map f >> mapMsg g
+
+
+withCmds : List (Cmd msg) -> Step model msg a -> Step model msg a
+withCmds a =
+    withCmd (Cmd.batch a)
+
+
+{-| Step to a new state and cmd the
+
+    Step.lead
+
+    Step.to Loading
+        |> Step.withCmd httpRequest
+        |> Step.cmd httpRequest
+
+    Step.to Loading
+        |> Step.cmd httpRequest
+
+    Step.to Loading
+        |> Step.cmd httpRequest
+
+    Step.withCmd httpRequest Loading
+
+-}
+withCmd_ : Cmd msg -> model -> Step model msg a
+withCmd_ cmd model =
+    To model [ cmd ]
+
+
+when : (model -> Bool) -> Step model msg a -> Step model msg a
+when predicate step =
+    case step of
+        To model msgCmdList ->
+            if predicate model then
+                To model msgCmdList
+
+            else
+                Stay
+
+        Exit a ->
+            Exit a
+
+        Stay ->
+            Stay
