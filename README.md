@@ -1,27 +1,75 @@
 # step
-An experimental library for cleaner, more composable update functions
 
-## Installation
+An experimental package for clean update functions
 
+## Overview
+
+Use this package to write update functions in your Elm app.
+
+Instead of returning a `(Model, Cmd Msg)` from your update function, you'll return a `Step Model Msg a`, with or without the `a` variable filled in. I know, I know, there are _three_ type variables there. In return for having to look at three freakin type variables all day long, code that looks like this:
+
+```elm
+let
+    (newLogin, loginCmd) =
+        Login.update loginMsg model.login
+in
+    ({ model | login = newLogin }, Cmd.map LoginMsg loginCmd)
 ```
-elm install xilnocas/step
+
+will come out looking like this
+
+```elm
+Login.update loginMsg model.login
+    |> Step.within (\w -> { model | login = w }) LoginMsg
 ```
+
+And that's just the beginning.
+
+The goal is that by using `step`, you'll be able to
+
+1. Express common update function patterns easily and safely
+1. Think and talk about these patterns in a way that makes sense with TEA
+1. Notice more easily how many states your app has, helping you "make impossible states impossible"
+
 
 ## Usage
 
-This library deals with _state transitions_, a fancy term for the act of updating your application's state. When app steps from one state to another, It's undergone a state transition. In an elm app, state transitions happen in response to messages. The update function is what tells Elm how to transition the state of your app when a particular message occurs.
-
-The idea is that instead of returning a `(Model, Cmd Msg)` from your update function, you return a `Step Model Msg a`, with or without the `a` variable filled in. I know, I know, there are _three_ type variables there. I'd like there to be fewer, but they're just too darn useful! In return for having to look at three freakin type variables all day long, you'll get an API that should look familiar if you've been writing Elm for a while, and lets you encode a bunch of common update function patterns very succinctly.
-
-At least as importantly, I believe the library lets you express these patterns in a way that's less about the visual "components" in your app and more about the _interactions_ underlying them, and helping them have as little state as possible. That way, you can leave all the visual detail for your `view` function, where it belongs!
-
 Here's a quick tour of some important features
 
-### Returning state, issuing commands
 
-TODO
+### Returning state, maybe with commands
 
-### Less boilerplate calling nested update functions
+A lot of the time, all your update function does is update the state of the app. You usually return something like this
+
+
+```elm
+(newModel, Cmd.none)
+```
+
+With `step`, you'll return this
+
+```elm
+Step.to newModel
+```
+
+If you want to fire off a command in addition to the state change, you'd do so like this.
+
+```elm
+( newModel
+, Http.send ServerResponse (Http.get "/fruits" fruitDecoder)
+)
+```
+
+With `step`, it looks like this
+
+
+```elm
+Step.to newModel
+    |> Step.command (Http.send ServerResponse (Http.get "fruits.json" fruitDecoder))
+```
+
+
+### Calling nested update functions
 
 Code that looks like this
 
@@ -29,13 +77,13 @@ Code that looks like this
 update : Msg -> Model -> (Model , Cmd Msg)
 update msg model =
     case msg of
-        WidgetMsg widgetMsg ->
+        LoginMsg loginMsg ->
             let
-                (newWidget, widgetCmd) =
-                    Login.update widgetMsg model.widget
+                (newLogin, loginCmd) =
+                    Login.update loginMsg model.login
 
             in
-                ({ model | widget = newWidget }, Cmd.map WidgetMsg widgetCmd)                    
+                ({ model | login = newLogin }, Cmd.map LoginMsg loginCmd)                    
 ```
 
 turns into this
@@ -46,9 +94,9 @@ import Step exposing (Step)
 update : Msg -> Model -> Step Model Msg a
 update msg model =
     case msg of
-        WidgetMsg widgetMsg ->
-            Widget.update widgetMsg model.widget
-                |> Step.within (\w -> { model | widget = w }) WidgetMsg
+        LoginMsg loginMsg ->
+            Login.update loginMsg model.login
+                |> Step.within (\w -> { model | login = w }) LoginMsg
 
 ```
 
@@ -66,37 +114,40 @@ just say
 Step.stay
 ```
 
-But this isn't just terser syntax. When used in combination with `Step.orElse`, it lets you combine a bunch of isolated steps, and return only the first one that isn't a `stay`
+But this isn't just terser syntax. `Step.orElse` lets you combine a bunch of isolated steps, and return only the first one that isn't a `stay`
 
 ```elm
 let
   stepCalendar =
       case msg of
-          AddEvent e -> Step.to { model | calendar = e :: model.calendar }
+          AddEvent e ->
+              Step.to { model | calendar = e :: model.calendar }
 
-      _ ->
-          Step.stay
+          _ ->
+              Step.stay
 
   stepContacts =
       case msg of
-          AddContact c -> Step.to { model | contacts = c :: model.contacts }
+          AddContact c ->
+              Step.to { model | contacts = c :: model.contacts }
 
-      _ ->
-          Step.stay
+          _ ->
+              Step.stay
 
 in
   stepCalendar
       |> Step.orElse stepContacts
       -- if msg is AddContact, will return value of stepContacts
-
 ```
 
 This can be super useful as you're iterating on an app, where you know roughly which pieces of state are isolated from one another, but you don't want to split messages up into their own types quite yet.
 
 
-### Returning extra context from `update`
+### Returning extra data from `update`
 
-`Step.exit` and `Step.onExit` work together to implement a version of what's sometimes called the "OutMsg" pattern, which is really just returning context other than the `(Model, Cmd Msg)` from an update function. A special case of that pattern that I've found really useful is when *the context only comes out when update function makes its final transition*.
+`Step.exit` and `Step.onExit` work together to implement a version of what's sometimes called the "OutMsg" pattern, which is really just returning context other than the `(Model, Cmd Msg)` from an update function.
+
+A special case of that pattern that I've found really useful is when *the context only comes out when update function makes its final transition*.
 
 As an example, think of a login interaction: It starts, proceeds as the user types their info, then some REST call is made, then when all is said and done we're left with a `User`. We can encode that idea really easily
 
@@ -107,8 +158,12 @@ module Login exposing (..)
 
 update : Msg -> Model -> Step Model Msg User
 update msg model =
-        case msg of
-           LoginSucceeded user -> Step.exit user
+    case msg of
+
+      -- Usual filling out of a login form ...
+
+       LoginSucceeded user ->
+          Step.exit user
 
         ...
 ```
@@ -123,8 +178,8 @@ import Login
 
 update : Msg -> Model -> Step Model Msg a
 update msg model =
-     case (msg, model) of
-         (LoginMsg loginMsg, LoggingIn loginModel) ->
+    case (msg, model) of
+        (LoginMsg loginMsg, LoggingIn loginModel) ->
             Login.update loginMsg loginModel
                 |> Step.within LoggingIn LoginMsg
                 |> Step.onExit (\user -> Step.to (LoggedIn user))
@@ -134,17 +189,36 @@ update msg model =
 My hunch is that this method of building update functions that return data at the end of an interaction covers most of the use cases of the "OutMsg" pattern, and ultimately leads to simpler, easier to understand code. I'm excited so see if the community finds this to be true as well!
 
 
-## Prior Art
+## Example app
 
-* Fresheyeball/elm-return
-    * Original inspiration for this sort of library, appending commands
-    * Over-reliance on haskelley lingo
-    * Too much API, you don't need most of it
+To provide an orienting example, I've [forked Richard's `elm-spa-example`](https://github.com/xilnocas/elm-spa-example), and converted all the update functions to return `Steps`. It so happens that that app is architected in a way that makes `step` less useful; there were no opportunities to use `orElse` or `onExit`. Still, looking at the diff will give you an idea of how things translate.
 
-* Janiczek/cmd-extra
-    * Too little API
+## Prior Work
 
-* Chadtech/return
-    * a `Return3` is the closest thing to a `Step` I've seen. And the `incorp` function is very close in purpose to the `onExit` function
-    * Can return extra stuff + state + commands all at the same time, which I think might be unnecessary or indicate a design smell
-    * I struggle to form a mental model for what a `Return3` is. It's a name for a code pattern, whereas `Step` tries to be a name for a higher-level entity: a transition of you application's state.
+The idea for this kind of package is not new. `Step` wouldn't be a thing without inspiration from the following libraries
+
+### [Fresheyeball/elm-return](https://package.elm-lang.org/packages/Fresheyeball/elm-return/latest)
+
+* My original inspiration for this sort of package. The pattern of appending commands with a pipeline-friendly function really appealed to me
+* Over-relies on Haskelley lingo
+* Too much API. As an example, `Step` doesn't have an `andThen` function exposed, because I've never had a use for one.
+
+### [Janiczek/cmd-extra](https://package.elm-lang.org/packages/Janiczek/cmd-extra/latest/)
+
+* Pleasingly simple
+* Too little API ( :) )
+
+### [Chadtech/return](https://package.elm-lang.org/packages/Chadtech/return/latest/)
+
+* A `Return3` is the closest thing to a `Step` I've seen. The `incorp` function is very similar in purpose to the `onExit` function, and seeing it helped me realize I was on the right track.
+
+* `Return3` lets you return state, commands, and extra stuff all at the same time, which I suspect is unnecessary. The idea of an interaction's behavior being constantly dependent on data from a sub-interaction makes me think that the two should probably be folded into one. In contrast to `Return3`, `Step` optimizes for when there's a clean break between the two.
+
+* I struggle to form a mental model for what a `Return3` is. It's a name for the code pattern, whereas `Step` tries to be a name for a higher-level entity: a step in TEA's update loop.
+
+
+## Installation
+
+```
+elm install xilnocas/step
+```
