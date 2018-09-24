@@ -39,20 +39,20 @@ Here's a quick tour of some important features
 
 ### Returning state, maybe with commands
 
-A lot of the time, all your update function does is update the state of the app. You usually return something like this
+A lot of the time, all your update function does is update the state of the app. You usually return something like this:
 
 
 ```elm
 (newModel, Cmd.none)
 ```
 
-With `step`, you'll return this
+With `step`, you'll return this:
 
 ```elm
 Step.to newModel
 ```
 
-If you want to fire off a command in addition to the state change, you'd do so like this.
+Before, if you wanted to fire off a command in addition to updating state, you'd do so like this:
 
 ```elm
 ( newModel
@@ -60,12 +60,13 @@ If you want to fire off a command in addition to the state change, you'd do so l
 )
 ```
 
-With `step`, it looks like this
+With `step`, it looks like this:
 
 
 ```elm
 Step.to newModel
-    |> Step.command (Http.send ServerResponse (Http.get "fruits.json" fruitDecoder))
+    |> Step.command
+      (Http.send ServerResponse (Http.get "fruits.json" fruitDecoder))
 ```
 
 
@@ -100,6 +101,9 @@ update msg model =
 
 ```
 
+The idea behind the name `within` is that you're transforming a step in some smaller interaction to a step `within` some larger interaction.
+
+
 ### Handling invalid transitions
 
 `Step.stay` is sort of like `Nothing`, but specialized for `Step`s. It lets you say "on this combination of `Model` and `Msg`, I don't want the state to transition." Basically, any time you want to say
@@ -114,7 +118,7 @@ just say
 Step.stay
 ```
 
-But this isn't just terser syntax. `Step.orElse` lets you combine a bunch of isolated steps, and return only the first one that isn't a `stay`
+And this isn't just a terser syntax. `Step.orElse` lets you combine a bunch of isolated steps, and return only the first one that isn't a `stay`
 
 ```elm
 let
@@ -140,16 +144,15 @@ in
       -- if msg is AddContact, will return value of stepContacts
 ```
 
-This can be super useful as you're iterating on an app, where you know roughly which pieces of state are isolated from one another, but you don't want to split messages up into their own types quite yet.
+This can be handy as you're iterating on an app, where you know roughly which pieces of state are isolated from one another, but you don't want to split messages up into their own types quite yet.
 
 
 ### Returning extra data from `update`
 
-`Step.exit` and `Step.onExit` work together to implement a version of what's sometimes called the "OutMsg" pattern, which is really just returning context other than the `(Model, Cmd Msg)` from an update function.
+Often when splitting an app into a set of distinct update functions, some of those update functions are involved in producing a value other than the state that the calling update function needs to consume.
 
-A special case of that pattern that I've found really useful is when *the context only comes out when update function makes its final transition*.
 
-As an example, think of a login interaction: It starts, proceeds as the user types their info, then some REST call is made, then when all is said and done we're left with a `User`. We can encode that idea really easily
+As an example, think of a login interaction: It starts, proceeds as the user types their info, then some REST call is made on submit, then when all is said and done we're left with a `User`. We can encode that idea really easily with `Step.exit`
 
 
 ```elm
@@ -165,10 +168,11 @@ update msg model =
        LoginSucceeded user ->
           Step.exit user
 
-        ...
 ```
 
-Then, whoever uses our `Login` module can use `Step.onExit` to incorporate this data into their own `Step`
+Here we see the third type variable come into play. It represents the type of data that eventually gets returned in the final `Step` of the interaction we're modeling.
+
+Now, whoever uses our `Login` module can use `Step.onExit` to incorporate this data into their own `Step` with the `onExit` function.
 
 ```elm
 module Main exposing (..)
@@ -183,15 +187,18 @@ update msg model =
             Login.update loginMsg loginModel
                 |> Step.within LoggingIn LoginMsg
                 |> Step.onExit (\user -> Step.to (LoggedIn user))
-         ...
 ```
 
-My hunch is that this method of building update functions that return data at the end of an interaction covers most of the use cases of the "OutMsg" pattern, and ultimately leads to simpler, easier to understand code. I'm excited so see if the community finds this to be true as well!
+Elm veterans might notice that this bears some resemblance to the "OutMsg" pattern, but I think that terminology is confusing. It's not a "Msg" (in the elm sense) that's coming back, it's just a normal elm value that you can use how you please.
+
+And, crucially, because a value is only returned when the sub-interaction is "done" in some sense, we're not creating some complicated back and forth conversation between two pieces of state, a-la OOP.
+
+My experience is that building modules around these sorts of `exit` boundaries ultimately leads to easier to understand code. I'm excited to see if the community finds this to be true as well!
 
 
 ## Example app
 
-To provide an orienting example, I've [forked Richard's `elm-spa-example`](https://github.com/xilnocas/elm-spa-example), and converted all the update functions to return `Steps`. It so happens that that app is architected in a way that makes `step` less useful; there were no opportunities to use `orElse` or `onExit`. Still, looking at the diff will give you an idea of how things translate.
+To provide an orienting example, I've [forked Richard's `elm-spa-example`](https://github.com/xilnocas/elm-spa-example), and converted all the update functions to return `Step`s. It so happens that that app is architected in a way that makes `step` less useful; there were no opportunities to use `orElse` or `onExit`. Still, looking at the diff will give you an idea of how things translate.
 
 ## Prior Work
 
@@ -212,7 +219,7 @@ The idea for this kind of package is not new. `Step` wouldn't be a thing without
 
 * A `Return3` is the closest thing to a `Step` I've seen. The `incorp` function is very similar in purpose to the `onExit` function, and seeing it helped me realize I was on the right track.
 
-* `Return3` lets you return state, commands, and extra stuff all at the same time, which I suspect is unnecessary. The idea of an interaction's behavior being constantly dependent on data from a sub-interaction makes me think that the two should probably be folded into one. In contrast to `Return3`, `Step` optimizes for when there's a clean break between the two.
+* `Return3` lets you return state, commands, and extra stuff all at the same time, which I suspect is unnecessary. The idea of an interaction's behavior being constantly dependent on data from a sub-interaction makes me think that the two should probably be folded into one. In contrast, `Step` optimizes for when there's a clean break between the two.
 
 * I struggle to form a mental model for what a `Return3` is. It's a name for the code pattern, whereas `Step` tries to be a name for a higher-level entity: a step in TEA's update loop.
 
