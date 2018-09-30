@@ -6,7 +6,7 @@ An experimental package for clean update functions
 
 Use this package to write update functions in your Elm app.
 
-Instead of returning a `(Model, Cmd Msg)` from your update function, you'll return a `Step Model Msg a`, with or without the `a` variable filled in. I know, I know, there are _three_ type variables there. In return for having to look at three freakin type variables all day long, code that looks like this:
+Code that used to look like this:
 
 ```elm
 let
@@ -23,7 +23,8 @@ Login.update loginMsg model.login
     |> Step.within (\w -> { model | login = w }) LoginMsg
 ```
 
-And that's just the beginning.
+Instead of returning a `(Model, Cmd Msg)` from your update function, you'll return a `Step Model Msg a`, with or without the `a` variable filled in. I know, I know, there are _three_ type variables there. In return for having to look at three freakin type variables all day long, you'll get the above cleanliness improvement and a bunch of other goodies.
+
 
 The goal is that by using `step`, you'll be able to
 
@@ -189,16 +190,30 @@ update msg model =
                 |> Step.onExit (\user -> Step.to (LoggedIn user))
 ```
 
-Elm veterans might notice that this bears some resemblance to the "OutMsg" pattern, but I think that terminology is confusing. It's not a "Msg" (in the elm sense) that's coming back, it's just a normal elm value that you can use how you please.
+Elm veterans might notice that this bears some resemblance to the "OutMsg" pattern. I think calling it that is more confusing than helpful. It's not a "Msg" (in the elm sense) that's coming back per se, it's just a normal elm value that you can use how you please.
 
-And, crucially, because a value is only returned when the sub-interaction is "done" in some sense, we're not creating some complicated back and forth conversation between two pieces of state, a-la OOP.
+And, crucially, we're restricting ourselves to interactions in which returning a value of type `a` is the _last thing that happens_, in some sense. This ensures we're not creating some tightly coupled conversation between two pieces of state, a-la OOP.
 
 My experience is that building modules around these sorts of `exit` boundaries ultimately leads to easier to understand code. I'm excited to see if the community finds this to be true as well!
+
+
+### Wiring it up
+
+You can use `step` at any point in an app. But at some point, you're going to have to convert `Step`s back into the `(model, Cmd msg)` that The Elm Architecture demands. The easiest way to do this is with `Step.asUpdateFunction`. Just pass it an update function defined with `Step`, and it'll spit out a TEA-compatible update function that does what you'd expect.
+
+We also provide `Step.run` if you want more control over happens when the `Step` is a `stay`.
+
+There is some subtle type trickery going on in these functions with the `Never` type. All you should have to know is that in order to pass something to `run` or `asUpdateFunction`, the third type variable in the `Step` (named `a` in the docs) can't be filled in with a concrete type. If it is, you need to call `onExit` on it and consume the return value in some way to get the types to line up.
 
 
 ## Example app
 
 To provide an orienting example, I've [forked Richard's `elm-spa-example`](https://github.com/xilnocas/elm-spa-example), and converted all the update functions to return `Step`s. It so happens that that app is architected in a way that makes `step` less useful; there were no opportunities to use `orElse` or `onExit`. Still, looking at the diff will give you an idea of how things translate.
+
+
+## FAQ
+
+Under Construction
 
 ## Prior Work
 
@@ -213,7 +228,7 @@ The idea for this kind of package is not new. `Step` wouldn't be a thing without
 ### [Janiczek/cmd-extra](https://package.elm-lang.org/packages/Janiczek/cmd-extra/latest/)
 
 * Pleasingly simple
-* Too little API ( :) )
+* Too little API!
 
 ### [Chadtech/return](https://package.elm-lang.org/packages/Chadtech/return/latest/)
 
