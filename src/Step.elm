@@ -40,7 +40,7 @@ All of these functions help you build functions that return steps out of other f
 import Task
 
 
-{-| A `Step model msg a` describes one state transition of an application, and is inteneded to be what gets returned from an update function.
+{-| A `Step model msg a` describes one state transition of an application, and is intended to be what gets returned from an update function.
 
 It's helpful to look at how a `Step` is (roughly) represented under the hood
 
