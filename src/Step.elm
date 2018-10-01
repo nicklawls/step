@@ -344,7 +344,7 @@ attempt handler task step =
 
 {-| Starting from an initial state, fold an update function over a list of messages
 
-Only use this to test that the application of cettain messages produces the result you expect, In application code, building up a bunch of `Msg`s just to feed them to an update function is ususally not worth the effort.
+Only use this to test that the application of certain messages produces the result you expect. In application code, building up a bunch of `Msg`s just to feed them to an update function is ususally not worth the effort.
 
 -}
 foldSteps :
