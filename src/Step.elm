@@ -1,7 +1,7 @@
 module Step exposing
     ( Step, to, stay, exit, fromUpdate, fromMaybe
     , withCmd, withAttempt, command, attempt
-    , map, mapMsg, within, mapExit, orElse, onExit
+    , map, mapMsg, within, mapExit, onExit
     , run, asUpdateFunction
     , foldSteps
     )
@@ -23,7 +23,7 @@ module Step exposing
 
 All of these functions help you build functions that return steps out of other functions that return steps
 
-@docs map, mapMsg, within, mapExit, orElse, onExit
+@docs map, mapMsg, within, mapExit, onExit
 
 
 # Getting back to TEA land
@@ -167,46 +167,6 @@ mapMsg f step =
 
         Stay ->
             Stay
-
-
-{-| Run the first suceeding `Step`, with priority given to the second argument
-
-Intended to be used pipeline style
-
-    Step.to { loading = True } |> Step.orElse (Step.to { loading = False }) == Step.to { loading = True }
-
-    Step.noop |> Step.orElse Step.to { loading = True } == Step.to { loading = True }
-
--}
-orElse : Step model msg a -> Step model msg a -> Step model msg a
-orElse stepA stepB =
-    case ( stepA, stepB ) of
-        ( To _ _, To state commands ) ->
-            To state commands
-
-        ( To state commands, Stay ) ->
-            To state commands
-
-        ( To state commands, Exit o ) ->
-            Exit o
-
-        ( Stay, To state commands ) ->
-            To state commands
-
-        ( Stay, Stay ) ->
-            Stay
-
-        ( Stay, Exit o ) ->
-            Exit o
-
-        ( Exit o, To state commands ) ->
-            Exit o
-
-        ( Exit o, Stay ) ->
-            Exit o
-
-        ( Exit _, Exit o ) ->
-            Exit o
 
 
 {-| Map over the output of an interaction, if we've reached the end
@@ -368,16 +328,6 @@ andThen f s =
 
         Exit o ->
             Exit o
-
-
-oneOf : List (Step model msg a) -> Step model msg a
-oneOf steps =
-    case steps of
-        [] ->
-            Stay
-
-        head :: tail ->
-            List.foldl orElse head tail
 
 
 {-| Use a step "within" a larger interaction
