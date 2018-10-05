@@ -313,6 +313,23 @@ andThen f s =
             Exit o
 
 
+mapWithCmd : (model1 -> ( model2, Cmd msg )) -> Step model1 msg a -> Step model2 msg a
+mapWithCmd f step =
+    case step of
+        To state commands ->
+            let
+                ( newState, moarCmds ) =
+                    f state
+            in
+            To newState (moarCmds :: commands)
+
+        Stay cmds ->
+            Stay cmds
+
+        Exit a ->
+            Exit a
+
+
 {-| Use a step "within" a larger interaction
 
     Step.within f g = Step.map f >> Step.mapMsg g
