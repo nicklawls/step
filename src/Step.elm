@@ -3,7 +3,7 @@ module Step exposing
     , withCmd, withAttempt, command, attempt
     , map, mapMsg, within, mapExit, onExit
     , run, asUpdateFunction
-    , foldSteps
+    , replay
     )
 
 {-|
@@ -33,7 +33,7 @@ All of these functions help you build functions that return steps out of other f
 
 # Testing update functions
 
-@docs foldSteps
+@docs replay
 
 -}
 
@@ -286,17 +286,18 @@ attempt handler task step =
 
 {-| Starting from an initial state, fold an update function over a list of messages
 
-Only use this to test that the application of certain messages produces the result you expect. In application code, building up a bunch of `Msg`s just to feed them to an update function is ususally not worth the effort.
+This function is intended as a convenience for testing update functions.
+
+In application code, building up a bunch of `Msg`s just to feed them to an `update` function can make code hard to follow. Instead, consider refactoring the code from the `update` branches into helper functions, and calling them in multiple places.
 
 -}
-foldSteps :
+replay :
     (msg -> model -> Step model msg a)
     -> ( model, Cmd msg )
     -> List msg
     -> Step model msg a
-foldSteps update init msgs =
-    {- TODO rename -}
-    List.foldl (andThen << update) (fromUpdate init) msgs
+replay update init history =
+    List.foldl (andThen << update) (fromUpdate init) history
 
 
 andThen : (model1 -> Step model2 msg o) -> Step model1 msg o -> Step model2 msg o
