@@ -56,8 +56,8 @@ That being said, if you find something that makes you want the data structure fu
 -}
 type Step model msg a
     = To model (List (Cmd msg))
+    | Stay (List (Cmd msg))
     | Exit a
-    | Stay
 
 
 {-| Transition to a new state, without executing any commands
@@ -80,7 +80,7 @@ If you want to stay in the same state, but run some commands, use `Step.to` expl
 -}
 stay : Step model msg a
 stay =
-    Stay
+    Stay []
 
 
 {-| End the interaction by returning a value of type `a`
@@ -114,8 +114,8 @@ withCmd cmd step =
         Exit o ->
             Exit o
 
-        Stay ->
-            Stay
+        Stay commands ->
+            Stay commands
 
 
 {-| Experimental alias for withCmd
@@ -129,8 +129,8 @@ command cmd step =
         Exit o ->
             Exit o
 
-        Stay ->
-            Stay
+        Stay commands ->
+            Stay (cmd :: commands)
 
 
 {-| Apply a function to the state inside a `Step`, if it's there
@@ -147,8 +147,8 @@ map f step =
         Exit o ->
             Exit o
 
-        Stay ->
-            Stay
+        Stay cmd ->
+            Stay cmd
 
 
 {-| Apply a function to any `msg`s in the `Step`'s commands
@@ -165,8 +165,8 @@ mapMsg f step =
         Exit o ->
             Exit o
 
-        Stay ->
-            Stay
+        Stay cmds ->
+            Stay (List.map (Cmd.map f) cmds)
 
 
 {-| Map over the output of an interaction, if we've reached the end
@@ -180,8 +180,8 @@ mapExit f step =
         Exit o ->
             Exit (f o)
 
-        Stay ->
-            Stay
+        Stay cmds ->
+            Stay cmds
 
 
 {-| Choose a `Step` based on the result of another interaction
@@ -200,8 +200,8 @@ onExit f step =
         Exit o ->
             f o
 
-        Stay ->
-            Stay
+        Stay cmds ->
+            Stay cmds
 
 
 {-| Turn a `Step` into the usual TEA update tuple
@@ -209,17 +209,17 @@ onExit f step =
 It must be a `Step` that doesn't `exit`. We know it is if the type variable `a` is still lowercase, i.e. not a specifc type, and can thus be chosen to be `Never` when calling this function.
 
 -}
-run : Step model msg Never -> Maybe ( model, Cmd msg )
+run : Step model msg Never -> ( Maybe model, Cmd msg )
 run s =
     case s of
         To state commands ->
-            Just ( state, Cmd.batch commands )
+            ( Just state, Cmd.batch commands )
 
         Exit n ->
             never n
 
-        Stay ->
-            Nothing
+        Stay cmds ->
+            ( Nothing, Cmd.batch cmds )
 
 
 {-| Turn an update function that returns a `Step` to a normal Elm Architecture update function
@@ -231,25 +231,7 @@ asUpdateFunction : (msg -> model -> Step model msg Never) -> msg -> model -> ( m
 asUpdateFunction update msg model =
     update msg model
         |> run
-        |> Maybe.withDefault ( model, Cmd.none )
-
-
-filterMap : (x -> Maybe y) -> Step x msg a -> Step y msg a
-filterMap f step =
-    case step of
-        To state cmds ->
-            case f state of
-                Just newState ->
-                    To newState cmds
-
-                Nothing ->
-                    Stay
-
-        Stay ->
-            Stay
-
-        Exit o ->
-            Exit o
+        |> Tuple.mapFirst (Maybe.withDefault model)
 
 
 {-| Step to the state denoted by the `model` in the `Just` case, stay otherwise
@@ -262,7 +244,7 @@ fromMaybe x =
             To s []
 
         Nothing ->
-            Stay
+            Stay []
 
 
 {-| Build a `Step` from a normal elm update tuple
@@ -280,8 +262,8 @@ withAttempt handler task step =
         To state cmds ->
             To state (Task.attempt handler task :: cmds)
 
-        Stay ->
-            Stay
+        Stay cmds ->
+            Stay cmds
 
         Exit o ->
             Exit o
@@ -295,8 +277,8 @@ attempt handler task step =
         To state cmds ->
             To state (Task.attempt handler task :: cmds)
 
-        Stay ->
-            Stay
+        Stay cmds ->
+            Stay cmds
 
         Exit o ->
             Exit o
@@ -323,8 +305,8 @@ andThen f s =
         To state commands ->
             f state |> withCmd (Cmd.batch commands)
 
-        Stay ->
-            Stay
+        Stay cmds ->
+            Stay cmds
 
         Exit o ->
             Exit o
@@ -365,20 +347,3 @@ withCmds a =
 withCmd_ : Cmd msg -> model -> Step model msg a
 withCmd_ cmd model =
     To model [ cmd ]
-
-
-when : (model -> Bool) -> Step model msg a -> Step model msg a
-when predicate step =
-    case step of
-        To model msgCmdList ->
-            if predicate model then
-                To model msgCmdList
-
-            else
-                Stay
-
-        Exit a ->
-            Exit a
-
-        Stay ->
-            Stay
