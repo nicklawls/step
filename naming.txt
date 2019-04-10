@@ -1,0 +1,24 @@
+throw/catch
+yield/await
+yield/continue
+return/bind
+stop/start
+stop/restart
+stop/continue
+exit/enter
+exitWith/enterWith
+end/continue
+end/start
+end/restart
+end/resume
+finish/start
+finish/restart
+
+depends on whether the function you want to pass to it is a verb or a noun
+
+mapping a terminal state of one interaction to any state of a larger one
+
+
+SubInteraction.update subMsg subModel
+  |> Step.within SubInteraction SubInteractionMsg
+  |> Step.exitIs (Step.fromUpdate << initializeDashboard) 

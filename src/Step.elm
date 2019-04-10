@@ -1,9 +1,9 @@
 module Step exposing
-    ( Step, to, stay, exit, fromUpdate, fromMaybe
-    , withCmd, withAttempt, command, attempt
-    , map, mapMsg, within, mapExit, orElse, onExit
+    ( Step, to, stay, fromUpdate, fromMaybe
+    , map, mapActions, within
     , run, asUpdateFunction
     , foldSteps
+    , apply, applyf, applys, do, tell
     )
 
 {-|
@@ -23,7 +23,7 @@ module Step exposing
 
 All of these functions help you build functions that return steps out of other functions that return steps
 
-@docs map, mapMsg, within, mapExit, orElse, onExit
+@docs map, mapActions, within, mapExit, orElse, onExit
 
 
 # Getting back to TEA land
@@ -54,15 +54,14 @@ We provide a smart constructor for each of these variants, but we hide the inter
 That being said, if you find something that makes you want the data structure fully exposed, please make an issue on GitHub!
 
 -}
-type Step model msg a
-    = To model (List (Cmd msg))
-    | Exit a
+type Step state a
+    = To state (List a)
     | Stay
 
 
 {-| Transition to a new state, without executing any commands
 -}
-to : model -> Step model msg a
+to : model -> Step model a
 to state =
     To state []
 
@@ -78,16 +77,9 @@ If you want to stay in the same state, but run some commands, use `Step.to` expl
     Step.to MySameState |> Step.withCmd myHttpCall
 
 -}
-stay : Step model msg a
+stay : Step model a
 stay =
     Stay
-
-
-{-| End the interaction by returning a value of type `a`
--}
-exit : a -> Step model msg a
-exit =
-    Exit
 
 
 {-| If we're stepping `to` a new state, add an cmd to fire off
@@ -105,29 +97,11 @@ Alternate name ideas:
   - with
 
 -}
-withCmd : Cmd msg -> Step model msg a -> Step model msg a
-withCmd cmd step =
+do : a -> Step model a -> Step model a
+do action step =
     case step of
-        To state commands ->
-            To state (cmd :: commands)
-
-        Exit o ->
-            Exit o
-
-        Stay ->
-            Stay
-
-
-{-| Experimental alias for withCmd
--}
-command : Cmd msg -> Step model msg a -> Step model msg a
-command cmd step =
-    case step of
-        To state commands ->
-            To state (cmd :: commands)
-
-        Exit o ->
-            Exit o
+        To state actions ->
+            To state (action :: actions)
 
         Stay ->
             Stay
@@ -138,107 +112,11 @@ command cmd step =
 Most useful for building a `Step` out of another `Step` returned from some other update function you're calling
 
 -}
-map : (model1 -> model2) -> Step model1 msg a -> Step model2 msg a
+map : (model1 -> model2) -> Step model1 a -> Step model2 a
 map f step =
     case step of
         To state cmd ->
             To (f state) cmd
-
-        Exit o ->
-            Exit o
-
-        Stay ->
-            Stay
-
-
-{-| Apply a function to any `msg`s in the `Step`'s commands
-
-Often used alongside `map` for building "bigger" `Step`s out of "smaller" ones
-
--}
-mapMsg : (msg1 -> msg2) -> Step model msg1 a -> Step model msg2 a
-mapMsg f step =
-    case step of
-        To state msgCmd ->
-            To state (List.map (Cmd.map f) msgCmd)
-
-        Exit o ->
-            Exit o
-
-        Stay ->
-            Stay
-
-
-{-| Run the first suceeding `Step`, with priority given to the second argument
-
-Intended to be used pipeline style
-
-    Step.to { loading = True } |> Step.orElse (Step.to { loading = False }) == Step.to { loading = True }
-
-    Step.noop |> Step.orElse Step.to { loading = True } == Step.to { loading = True }
-
--}
-orElse : Step model msg a -> Step model msg a -> Step model msg a
-orElse stepA stepB =
-    case ( stepA, stepB ) of
-        ( To _ _, To state commands ) ->
-            To state commands
-
-        ( To state commands, Stay ) ->
-            To state commands
-
-        ( To state commands, Exit o ) ->
-            Exit o
-
-        ( Stay, To state commands ) ->
-            To state commands
-
-        ( Stay, Stay ) ->
-            Stay
-
-        ( Stay, Exit o ) ->
-            Exit o
-
-        ( Exit o, To state commands ) ->
-            Exit o
-
-        ( Exit o, Stay ) ->
-            Exit o
-
-        ( Exit _, Exit o ) ->
-            Exit o
-
-
-{-| Map over the output of an interaction, if we've reached the end
--}
-mapExit : (a -> b) -> Step model msg a -> Step model msg b
-mapExit f step =
-    case step of
-        To state commands ->
-            To state commands
-
-        Exit o ->
-            Exit (f o)
-
-        Stay ->
-            Stay
-
-
-{-| Choose a `Step` based on the result of another interaction
-
-You can use this in combination with `map` and `mapMsg` to glue the end of one interaction to the beginning of another.
-
-Notice that it looks a lot like `Maybe.andThen` and `Result.andThen`, but operating on the last type variable.
-
--}
-onExit : (a -> Step model msg b) -> Step model msg a -> Step model msg b
-onExit f step =
-    case step of
-        To state commands ->
-            To state commands
-
-        Exit o ->
-            f o
 
         Stay ->
             Stay
@@ -249,14 +127,11 @@ onExit f step =
 It must be a `Step` that doesn't `exit`. We know it is if the type variable `a` is still lowercase, i.e. not a specifc type, and can thus be chosen to be `Never` when calling this function.
 
 -}
-run : Step model msg Never -> Maybe ( model, Cmd msg )
+run : Step model (Cmd msg) -> Maybe ( model, Cmd msg )
 run s =
     case s of
         To state commands ->
             Just ( state, Cmd.batch commands )
-
-        Exit n ->
-            never n
 
         Stay ->
             Nothing
@@ -267,34 +142,16 @@ run s =
 uses `run` internally to default with the provided model in case of a `stay`
 
 -}
-asUpdateFunction : (msg -> model -> Step model msg Never) -> msg -> model -> ( model, Cmd msg )
+asUpdateFunction : (msg -> model -> Step model (Cmd msg)) -> msg -> model -> ( model, Cmd msg )
 asUpdateFunction update msg model =
     update msg model
         |> run
         |> Maybe.withDefault ( model, Cmd.none )
 
 
-filterMap : (x -> Maybe y) -> Step x msg a -> Step y msg a
-filterMap f step =
-    case step of
-        To state cmds ->
-            case f state of
-                Just newState ->
-                    To newState cmds
-
-                Nothing ->
-                    Stay
-
-        Stay ->
-            Stay
-
-        Exit o ->
-            Exit o
-
-
 {-| Step to the state denoted by the `model` in the `Just` case, stay otherwise
 -}
-fromMaybe : Maybe model -> Step model msg a
+fromMaybe : Maybe model -> Step model a
 fromMaybe x =
     -- TODO rename
     case x of
@@ -305,94 +162,116 @@ fromMaybe x =
             Stay
 
 
-{-| Build a `Step` from a normal elm update tuple
--}
-fromUpdate : ( model, Cmd msg ) -> Step model msg o
-fromUpdate ( s, cmd ) =
-    To s [ cmd ]
-
-
-{-| A helper for building `Step`s out of tasks
--}
-withAttempt : (Result x a -> msg) -> Task.Task x a -> Step model msg b -> Step model msg b
-withAttempt handler task step =
-    case step of
-        To state cmds ->
-            To state (Task.attempt handler task :: cmds)
-
-        Stay ->
-            Stay
-
-        Exit o ->
-            Exit o
-
-
-{-| Experimental alias for `withAttempt`
--}
-attempt : (Result x a -> msg) -> Task.Task x a -> Step model msg b -> Step model msg b
-attempt handler task step =
-    case step of
-        To state cmds ->
-            To state (Task.attempt handler task :: cmds)
-
-        Stay ->
-            Stay
-
-        Exit o ->
-            Exit o
-
-
 {-| Starting from an initial state, fold an update function over a list of messages
 
 Only use this to test that the application of certain messages produces the result you expect. In application code, building up a bunch of `Msg`s just to feed them to an update function is ususally not worth the effort.
 
 -}
 foldSteps :
-    (msg -> model -> Step model msg a)
+    (msg -> model -> Step model (Cmd msg))
     -> ( model, Cmd msg )
     -> List msg
-    -> Step model msg a
+    -> Step model (Cmd msg)
 foldSteps update init msgs =
     {- TODO rename -}
     List.foldl (andThen << update) (fromUpdate init) msgs
 
 
-andThen : (model1 -> Step model2 msg o) -> Step model1 msg o -> Step model2 msg o
+fromUpdate =
+    Debug.todo ""
+
+
+andThen : (s -> Step t a) -> Step s a -> Step t a
 andThen f s =
     case s of
         To state commands ->
-            f state |> withCmd (Cmd.batch commands)
+            f state
+                |> doMany commands
 
         Stay ->
             Stay
 
-        Exit o ->
-            Exit o
 
+doMany : List a -> Step s a -> Step s a
+doMany actions s =
+    case s of
+        To state moar ->
+            To state (actions ++ moar)
 
-oneOf : List (Step model msg a) -> Step model msg a
-oneOf steps =
-    case steps of
-        [] ->
+        Stay ->
             Stay
 
-        head :: tail ->
-            List.foldl orElse head tail
+
+tell : a -> Step s a
+tell =
+    Debug.todo ""
+
+
+listen : Step s a -> Step ( s, List a ) Never
+listen step =
+    case step of
+        To state actions ->
+            To ( state, actions ) []
+
+        Stay ->
+            Stay
+
+
+pass : Step ( s, List a -> List b ) a -> Step s b
+pass step =
+    case step of
+        To ( state, f ) actions ->
+            To state (f actions)
+
+        Stay ->
+            Stay
+
+
+applyf : (a -> Maybe b) -> Step s a -> Step s b
+applyf f step =
+    step
+        |> map (\s -> Tuple.pair s (List.filterMap f))
+        |> pass
+
+
+{-| for each action of type `a`, produce zero or more actions of type `b`
+-}
+apply : (a -> List b) -> Step s a -> Step s b
+apply f step =
+    step
+        |> map (\s -> Tuple.pair s (List.concatMap f))
+        |> pass
+
+
+applys : (a -> Step s b) -> Step s a -> Step s b
+applys f step =
+    Debug.todo ""
+
+
+
+-- step
+--     |> map (\s -> Tuple.pair s (List.concatMap f))
+--     |> pass
 
 
 {-| Use a step "within" a larger interaction
 
-    Step.within f g = Step.map f >> Step.mapMsg g
+    Step.within f g = Step.map f >> Step.mapActions g
 
 -}
-within : (model1 -> model2) -> (msg1 -> msg2) -> Step model1 msg1 a -> Step model2 msg2 a
+within : (s -> t) -> (a -> b) -> Step s a -> Step t b
 within f g =
-    map f >> mapMsg g
+    map f >> mapActions g
 
 
-withCmds : List (Cmd msg) -> Step model msg a -> Step model msg a
-withCmds a =
-    withCmd (Cmd.batch a)
+mapActions : (a -> b) -> Step s a -> Step s b
+mapActions f s =
+    case s of
+        To state actions ->
+            To state (List.map f actions)
+
+        Stay ->
+            Stay
 
 
 {-| Step to a new state and cmd the
@@ -412,23 +291,21 @@ withCmds a =
     Step.withCmd httpRequest Loading
 
 -}
-withCmd_ : Cmd msg -> model -> Step model msg a
-withCmd_ cmd model =
-    To model [ cmd ]
-
-
-when : (model -> Bool) -> Step model msg a -> Step model msg a
 when predicate step =
-    case step of
-        To model msgCmdList ->
-            if predicate model then
-                To model msgCmdList
+    Debug.todo ""
 
-            else
-                Stay
 
-        Exit a ->
-            Exit a
 
-        Stay ->
-            Stay
+-- case step of
+--     To model msgCmdList ->
+--         if predicate model then
+--             To model msgCmdList
+--
+--         else
+--             Stay
+--
+--     Exit a ->
+--         Exit a
+--
+--     Stay ->
+--         Stay
