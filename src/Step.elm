@@ -3,7 +3,7 @@ module Step exposing
     , map, mapActions, within
     , run, asUpdateFunction
     , foldSteps
-    , apply, applyf, applys, do, tell
+    , do, exec
     )
 
 {-|
@@ -12,11 +12,6 @@ module Step exposing
 # Steps and how to make them
 
 @docs Step, to, stay, exit, fromUpdate, fromMaybe
-
-
-# Issuing commands
-
-@docs withCmd, withAttempt, command, attempt
 
 
 # Transforming and Composing Steps
@@ -36,8 +31,6 @@ All of these functions help you build functions that return steps out of other f
 @docs foldSteps
 
 -}
-
-import Task
 
 
 {-| A `Step model msg a` describes one state transition of an application, and is intended to be what gets returned from an update function.
@@ -123,9 +116,6 @@ map f step =
 
 
 {-| Turn a `Step` into the usual TEA update tuple
-
-It must be a `Step` that doesn't `exit`. We know it is if the type variable `a` is still lowercase, i.e. not a specifc type, and can thus be chosen to be `Never` when calling this function.
-
 -}
 run : Step model (Cmd msg) -> Maybe ( model, Cmd msg )
 run s =
@@ -135,6 +125,47 @@ run s =
 
         Stay ->
             Nothing
+
+
+exec :
+    (msg -> model -> Step model a)
+    -> (a -> model -> Step model (Cmd msg))
+    -> (msg -> model -> ( model, Cmd msg ))
+exec interaction interpreter =
+    let
+        eHelp step =
+            case step of
+                Stay ->
+                    Nothing
+
+                To init actions ->
+                    go init actions
+                        |> Just
+
+        go : model -> List a -> ( model, Cmd msg )
+        go state acts =
+            case acts of
+                [] ->
+                    ( state, Cmd.none )
+
+                act :: rest ->
+                    case interpreter act state of
+                        Stay ->
+                            go state rest
+
+                        To nextState moreCmds ->
+                            go nextState rest
+                                |> Tuple.mapSecond (\cmd -> Cmd.batch (cmd :: moreCmds))
+    in
+    \msg model ->
+        interaction msg model
+            |> eHelp
+            |> Maybe.withDefault ( model, Cmd.none )
+
+
+
+-- TODO a Program wrapper that stores a list of transition errors in the state, and or logs them somewhere
+-- TODO make sure we're evaluating commands FIFO?
 
 
 {-| Turn an update function that returns a `Step` to a normal Elm Architecture update function
@@ -177,8 +208,9 @@ foldSteps update init msgs =
     List.foldl (andThen << update) (fromUpdate init) msgs
 
 
-fromUpdate =
-    Debug.todo ""
+fromUpdate : ( model, Cmd msg ) -> Step model (Cmd msg)
+fromUpdate ( model, cmd ) =
+    To model [ cmd ]
 
 
 andThen : (s -> Step t a) -> Step s a -> Step t a
@@ -202,9 +234,10 @@ doMany actions s =
             Stay
 
 
-tell : a -> Step s a
-tell =
-    Debug.todo ""
+
+-- tell : a -> Step s a
+-- tell =
+--     Debug.todo ""
 
 
 listen : Step s a -> Step ( s, List a ) Never
@@ -227,33 +260,6 @@ pass step =
             Stay
 
 
-applyf : (a -> Maybe b) -> Step s a -> Step s b
-applyf f step =
-    step
-        |> map (\s -> Tuple.pair s (List.filterMap f))
-        |> pass
-
-
-{-| for each action of type `a`, produce zero or more actions of type `b`
--}
-apply : (a -> List b) -> Step s a -> Step s b
-apply f step =
-    step
-        |> map (\s -> Tuple.pair s (List.concatMap f))
-        |> pass
-
-
-applys : (a -> Step s b) -> Step s a -> Step s b
-applys f step =
-    Debug.todo ""
-
-
-
--- step
---     |> map (\s -> Tuple.pair s (List.concatMap f))
---     |> pass
-
-
 {-| Use a step "within" a larger interaction
 
     Step.within f g = Step.map f >> Step.mapActions g
@@ -272,40 +278,3 @@ mapActions f s =
 
         Stay ->
             Stay
-
-
-{-| Step to a new state and cmd the
-
-    Step.lead
-
-    Step.to Loading
-        |> Step.withCmd httpRequest
-        |> Step.cmd httpRequest
-
-    Step.to Loading
-        |> Step.cmd httpRequest
-
-    Step.to Loading
-        |> Step.cmd httpRequest
-
-    Step.withCmd httpRequest Loading
-
--}
-when predicate step =
-    Debug.todo ""
-
-
-
--- case step of
---     To model msgCmdList ->
---         if predicate model then
---             To model msgCmdList
---
---         else
---             Stay
---
---     Exit a ->
---         Exit a
---
---     Stay ->
---         Stay
