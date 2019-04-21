@@ -21,7 +21,10 @@ will come out looking like this
 ```elm
 Login.update loginMsg loginModel
     |> Pin.wrap LoginMsg LoginModel
-    |> Pin.edit (\w -> { model | page = w })
+    |> Pin.edit (\w -> { model | page = w }) -- for a `type alias Model = { key : Key, page : Page }
+-- Or just
+Login.update loginMsg loginModel
+    |> Pin.wrap LoginMsg (Model << LoginModel) -- for a `type Model = Model Key Page`
 ```
 
 Instead of returning a `(Model, Cmd Msg)` from your update function, you'll return a `Note from ToChildMsg ChildContent`, where the `from` variable is used for a child to communicate back up to the parent. I know, I know, there are _three_ type variables there. In return for having to look at three freakin type variables all day long, you'll get the above cleanliness improvement and a bunch of other goodies.
