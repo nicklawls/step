@@ -1,17 +1,17 @@
-# step
+# Pin
 
-An experimental package for clean update functions
+An experimental package for clean update functions forked from [xilnocas/step](https://github.com/xilnocas/step)
 
 ## Overview
 
-Use this package to write update functions in your Elm app.
+Becuase updating (`Pin.g`'ing) your content (AKA: Model) should be like sending (`Pin.send`) and receiving (`pong`) `Notes from to content`? 
 
 Code that used to look like this:
 
 ```elm
 let
     (newLogin, loginCmd) =
-        Login.update loginMsg model.login
+        Login.update loginMsg model.page -- where page is a Sum type of different child models...
 in
     ({ model | login = newLogin }, Cmd.map LoginMsg loginCmd)
 ```
@@ -19,11 +19,12 @@ in
 will come out looking like this
 
 ```elm
-Login.update loginMsg model.login
-    |> Step.within (\w -> { model | login = w }) LoginMsg
+Login.update loginMsg loginModel
+    |> Pin.wrap LoginMsg LoginModel
+    |> Pin.edit (\w -> { model | page = w })
 ```
 
-Instead of returning a `(Model, Cmd Msg)` from your update function, you'll return a `Step Model Msg a`, with or without the `a` variable filled in. I know, I know, there are _three_ type variables there. In return for having to look at three freakin type variables all day long, you'll get the above cleanliness improvement and a bunch of other goodies.
+Instead of returning a `(Model, Cmd Msg)` from your update function, you'll return a `Note from ToChildMsg ChildContent`, where the `from` variable is used for a child to communicate back up to the parent. I know, I know, there are _three_ type variables there. In return for having to look at three freakin type variables all day long, you'll get the above cleanliness improvement and a bunch of other goodies.
 
 
 The goal is that by using `step`, you'll be able to
@@ -50,7 +51,7 @@ A lot of the time, all your update function does is update the state of the app.
 With `step`, you'll return this:
 
 ```elm
-Step.to newModel
+Pin.write newModel : Note from to Model
 ```
 
 Before, if you wanted to fire off a command in addition to updating state, you'd do so like this:
@@ -61,15 +62,19 @@ Before, if you wanted to fire off a command in addition to updating state, you'd
 )
 ```
 
-With `step`, it looks like this:
+With `Pin`, it looks like this:
 
 
 ```elm
-Step.to newModel
-    |> Step.command
-      (Http.send ServerResponse (Http.get "fruits.json" fruitDecoder))
+let
+    note =
+        Pin.write model
+in
+note
+    |> Pin.g (Http.send ServerResponse (Http.get "fruits.json" fruitDecoder))
 ```
 
+If you're a veteran, think of it like the old `model ! []` syntax except you can chain your `Cmd msgs` with `|>`
 
 ### Calling nested update functions
 
@@ -77,15 +82,15 @@ Code that looks like this
 
 ```elm
 update : Msg -> Model -> (Model , Cmd Msg)
-update msg model =
-    case msg of
-        LoginMsg loginMsg ->
+update msg ({key, page} as content) =
+    case (msg, page) of
+        (LoginMsg loginMsg, Login loginModel) ->
             let
                 (newLogin, loginCmd) =
-                    Login.update loginMsg model.login
+                    Login.update loginMsg loginModel
 
             in
-                ({ model | login = newLogin }, Cmd.map LoginMsg loginCmd)                    
+                ({ model | page = newLogin }, Cmd.map LoginMsg loginCmd)                    
 ```
 
 turns into this
@@ -93,21 +98,22 @@ turns into this
 ```elm
 import Step exposing (Step)
 
-update : Msg -> Model -> Step Model Msg a
-update msg model =
-    case msg of
-        LoginMsg loginMsg ->
-            Login.update loginMsg model.login
-                |> Step.within (\w -> { model | login = w }) LoginMsg
+update : Msg -> Model -> Note from Msg Model
+update msg ({key, page} as content) =
+    case (msg, page) of
+        (LoginMsg loginMsg, Login loginModel) ->
+            Login.update loginMsg loginModel
+                |> Pin.wrap LoginMsg Login
+                |> Pin.edit (\w -> { model | page = w })
 
 ```
 
-The idea behind the name `within` is that you're transforming a step in some smaller interaction to a step `within` some larger interaction.
+The idea behind the name `wrap` is that you're `wrap`ing a `Note` in some child `update` with the parent `Note` constructors.
 
 
 ### Handling invalid transitions
 
-`Step.stay` is sort of like `Nothing`, but specialized for `Step`s. It lets you say "on this combination of `Model` and `Msg`, I don't want the state to transition." Basically, any time you want to say
+`Pin.wait` is sort of like `Nothing`, but specialized for `Note`s. It lets you say "on this combination of `Model` and `Msg`, I don't want the state to transition." Basically, any time you want to say
 
 ```elm
 (model, Cmd.none)
@@ -116,10 +122,10 @@ The idea behind the name `within` is that you're transforming a step in some sma
 just say
 
 ```elm
-Step.stay
+Pin.point -- the () Unit or Golden Thread of a Note. Not Never, void, or empty but just what it is.
 ```
 
-And this isn't just a terser syntax. `Step.orElse` lets you combine a bunch of isolated steps, and return only the first one that isn't a `stay`
+And this isn't just a terser syntax. `Step.orElse` lets you combine a bunch of isolated steps, and return only the first one that isn't a `point`
 
 ```elm
 let
@@ -129,7 +135,7 @@ let
               Step.to { model | calendar = e :: model.calendar }
 
           _ ->
-              Step.stay
+              Step.point
 
   stepContacts =
       case msg of
@@ -137,7 +143,7 @@ let
               Step.to { model | contacts = c :: model.contacts }
 
           _ ->
-              Step.stay
+              Step.point
 
 in
   stepCalendar
@@ -153,27 +159,27 @@ This can be handy as you're iterating on an app, where you know roughly which pi
 Often when splitting an app into a set of distinct update functions, some of those update functions are involved in producing a value other than the state that the calling update function needs to consume.
 
 
-As an example, think of a login interaction: It starts, proceeds as the user types their info, then some REST call is made on submit, then when all is said and done we're left with a `User`. We can encode that idea really easily with `Step.exit`
+As an example, think of a login interaction: It starts, proceeds as the user types their info, then some REST call is made on submit, then when all is said and done we're left with a `User`. We can encode that idea really easily with `pong`
 
 
 ```elm
 module Login exposing (..)
 
 
-update : Msg -> Model -> Step Model Msg User
+update : Msg -> Model -> Note User Msg Model
 update msg model =
     case msg of
 
       -- Usual filling out of a login form ...
 
        LoginSucceeded user ->
-          Step.exit user
+          pong user
 
 ```
 
-Here we see the third type variable come into play. It represents the type of data that eventually gets returned in the final `Step` of the interaction we're modeling.
+Here we see the third type variable come into play. It represents the type of data that eventually gets returned in the final `Note` of the interaction we're modeling.
 
-Now, whoever uses our `Login` module can use `Step.onExit` to incorporate this data into their own `Step` with the `onExit` function.
+Now, whoever uses our `Login` module can use `Pin.pong` or just `pong` to incorporate this data into their own `Note` with the `Pin.pongWith` or just `pongWith` function.
 
 ```elm
 module Main exposing (..)
@@ -181,13 +187,13 @@ module Main exposing (..)
 import Login
 
 
-update : Msg -> Model -> Step Model Msg a
+update : Msg -> Model -> Note a Msg Model
 update msg model =
     case (msg, model) of
         (LoginMsg loginMsg, LoggingIn loginModel) ->
             Login.update loginMsg loginModel
-                |> Step.within LoggingIn LoginMsg
-                |> Step.onExit (\user -> Step.to (LoggedIn user))
+                |> Pin.wrap LoginMsg LoggingIn
+                |> Pin.onPong (\user -> Pin.write (LoggedIn user))
 ```
 
 Elm veterans might notice that this bears some resemblance to the "OutMsg" pattern. I think calling it that is more confusing than helpful. It's not a "Msg" (in the elm sense) that's coming back per se, it's just a normal elm value that you can use how you please.
@@ -199,16 +205,16 @@ My experience is that building modules around these sorts of `exit` boundaries u
 
 ### Wiring it up
 
-You can use `step` at any point in an app. But at some point, you're going to have to convert `Step`s back into the `(model, Cmd msg)` that The Elm Architecture demands. The easiest way to do this is with `Step.asUpdateFunction`. Just pass it an update function defined with `Step`, and it'll spit out a TEA-compatible update function that does what you'd expect.
+You can use `Pin` at any point in an app. But at some point, you're going to have to convert `Notes`s back into the `(model, Cmd msg)` that The Elm Architecture demands. The easiest way to do this is with `Pin.tack`. Just pass it an update function defined with `Note`, and it'll spit out a TEA-compatible update function that does what you'd expect.
 
-We also provide `Step.run` if you want more control over happens when the `Step` is a `stay`.
+We also provide `Pin.run` if you want more control over happens when the result is just a `Note` value.
 
-There is some subtle type trickery going on in these functions with the `Never` type. All you should have to know is that in order to pass something to `run` or `asUpdateFunction`, the third type variable in the `Step` (named `a` in the docs) can't be filled in with a concrete type. If it is, you need to call `onExit` on it and consume the return value in some way to get the types to line up.
+There is some subtle type trickery going on in these functions with the `Never` type. All you should have to know is that in order to pass something to `run` or `tack`, the first type variable in the `Note` (named `from` in the docs) can't be filled in with a concrete type. If it is, you need to call `onPong` on it and consume the return value in some way to get the types to line up.
 
 
 ## Example app
 
-To provide an orienting example, I've [forked Richard's `elm-spa-example`](https://github.com/xilnocas/elm-spa-example), and converted all the update functions to return `Step`s. It so happens that that app is architected in a way that makes `step` less useful; there were no opportunities to use `orElse` or `onExit`. Still, looking at the diff will give you an idea of how things translate.
+To provide an orienting example, I've [forked Richard's `elm-spa-example`](https://github.com/xilnocas/elm-spa-example), and converted all the update functions to return `Notes`s. It so happens that that app is architected in a way that makes `Note` less useful; there were no opportunities to use `orElse` or `onPong`. Still, looking at the diff will give you an idea of how things translate.
 
 
 ## FAQ
@@ -217,13 +223,13 @@ Under Construction
 
 ## Prior Work
 
-The idea for this kind of package is not new. `Step` wouldn't be a thing without inspiration from the following libraries
+The idea for this kind of package is not new. `Note` wouldn't be a thing without inspiration from the following libraries
 
 ### [Fresheyeball/elm-return](https://package.elm-lang.org/packages/Fresheyeball/elm-return/latest)
 
 * My original inspiration for this sort of package. The pattern of appending commands with a pipeline-friendly function really appealed to me
 * Over-relies on Haskelley lingo
-* Too much API. As an example, `Step` doesn't have an `andThen` function exposed, because I've never had a use for one.
+* Too much API. As an example, `Pin` doesn't have an `andThen` function exposed, because I've never had a use for one.
 
 ### [Janiczek/cmd-extra](https://package.elm-lang.org/packages/Janiczek/cmd-extra/latest/)
 
@@ -232,15 +238,15 @@ The idea for this kind of package is not new. `Step` wouldn't be a thing without
 
 ### [Chadtech/return](https://package.elm-lang.org/packages/Chadtech/return/latest/)
 
-* A `Return3` is the closest thing to a `Step` I've seen. The `incorp` function is very similar in purpose to the `onExit` function, and seeing it helped me realize I was on the right track.
+* A `Return3` is the closest thing to a `Note` I've seen. The `incorp` function is very similar in purpose to the `onPong` function, and seeing it helped me realize I was on the right track.
 
-* `Return3` lets you return state, commands, and extra stuff all at the same time, which I suspect is unnecessary. The idea of an interaction's behavior being constantly dependent on data from a sub-interaction makes me think that the two should probably be folded into one. In contrast, `Step` optimizes for when there's a clean break between the two.
+* `Return3` lets you return state, commands, and extra stuff all at the same time, which I suspect is unnecessary. The idea of an interaction's behavior being constantly dependent on data from a sub-interaction makes me think that the two should probably be folded into one. In contrast, `Note` optimizes for when there's a clean break between the two.
 
-* I struggle to form a mental model for what a `Return3` is. It's a name for the code pattern, whereas `Step` tries to be a name for a higher-level entity: a step in TEA's update loop.
+* I struggle to form a mental model for what a `Return3` is. It's a name for the code pattern, whereas `Note` tries to be a name for a higher-level entity: a step in TEA's update loop.
 
 
 ## Installation
 
 ```
-elm install xilnocas/step
+elm install erlandsona/pin
 ```
